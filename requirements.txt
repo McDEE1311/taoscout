@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+requests
+aiohttp
+python-dotenv
+bittensor

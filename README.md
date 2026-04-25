@@ -1,38 +1,37 @@
 # TaoScout
+Bittensor operator intelligence agent. Tracks 129 subnets in real time.
 
-Bittensor operator intelligence agent for subnet analytics, GPU-fit ranking, movers, risk scoring, and operator actions.
+## What it does
+- Live subnet emission, burn, fill tracking
+- GPU fit scoring for 24GB / 32GB / 48GB / 96GB hardware
+- Daily operator dashboard with actionable alerts
+- Natural language Bittensor questions
+- 24h emission movers and trend tracking
+- Deregistration risk scoring
 
-## Core Features
+## Hardware Requirements
+- Minimum: RTX 3090 24GB
+- Recommended: RTX 4090 24GB or RTX 5090 32GB
 
-- Live subnet opportunity rankings
-- GPU fit scoring (24GB / 32GB / 48GB / 96GB)
-- Movers / momentum detection
-- Burn cost + deregistration risk analysis
-- Structured natural-language ask endpoint
-- FastAPI dashboard + API
+## Quick Start
+cp config.example.json config.json
+# Add your keys to config.json
+pip install -r requirements.txt
+python3 api.py
 
-## Runtime
+## Endpoints (require X-API-Key header)
+GET  /health       system status
+GET  /brief        operator brief
+GET  /dashboard    daily dashboard with actions
+GET  /scan         top 5 opportunities
+GET  /rankings     GPU class rankings
+GET  /movers       emission movers
+POST /ask          natural language query
+GET  /query-stats  usage analytics
 
-Minimum:
-- RTX 3090 24GB
+## Environment Variables
+TAOSTATS_API_KEY — from taostats.io
+OLLAMA_HOST — default http://127.0.0.1:11434
 
-Preferred:
-- RTX 4090 / RTX 5090
-
-Optional:
-- helper GPUs for routing/background tasks
-
-## Endpoints
-
-- `/health`
-- `/dashboard`
-- `/brief`
-- `/ask`
-
-## Status
-
-Live beta build. Local deployment validated.
-
-## Contact
-
-Available for hosted deployment / Polaris integration.
+## Not financial advice
+TaoScout is automated operator tooling. Informational only.
