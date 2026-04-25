@@ -1,0 +1,9 @@
+config.json
+.env
+data/
+logs/
+*.db
+__pycache__/
+*.bak
+*.bak2
+*.bak3

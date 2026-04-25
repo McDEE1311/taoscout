@@ -1,0 +1,25 @@
+{
+  "ollama_url": "http://127.0.0.1:11434/api/chat",
+  "ollama_helper_url": "http://127.0.0.1:11435/api/chat",
+  "ollama_worker_url": "http://127.0.0.1:11436/api/chat",
+  "model": "llama3.1:latest",
+  "helper_model": "qwen2.5:7b-instruct",
+  "worker_model": "mistral:latest",
+  "data_dir": "/home/mcdeerig/taoscout/data",
+  "log_dir": "/home/mcdeerig/taoscout/logs",
+  "btcli_path": "/home/mcdeerig/.local/bin/btcli",
+  "bt_venv": "/home/mcdeerig/bt-venv",
+  "miid_venv": "/home/mcdeerig/subnets/MIID-subnet/miner_env",
+  "my_subnets": [
+    54,
+    39
+  ],
+  "my_miner_uid": 39,
+  "refresh_interval_minutes": 30,
+  "taostats_api_key": "YOUR_TAOSTATS_API_KEY_HERE",
+  "api_keys": [
+    "YOUR_API_KEY_HERE"
+  ],
+  "api_host": "127.0.0.1",
+  "api_port": 8765
+}

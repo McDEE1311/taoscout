@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaoScout — Bittensor Operator Intelligence</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospace; min-height: 100vh; }
+.header { background: #111; border-bottom: 1px solid #1a1a2e; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+.logo { display: flex; align-items: baseline; gap: 12px; }
+.logo-name { font-size: 22px; font-weight: 700; color: #00d4ff; letter-spacing: 2px; }
+.logo-sub { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1.5px; }
+.status-bar { display: flex; gap: 16px; align-items: center; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; display: inline-block; margin-right: 6px; }
+.status-dot.green { background: #00ff88; box-shadow: 0 0 6px #00ff88; }
+.status-dot.yellow { background: #ffcc00; }
+.status-dot.red { background: #ff4444; }
+.status-item { font-size: 11px; color: #888; }
+.status-item span { color: #ccc; }
+.main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+.meta-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 2rem; }
+.meta-card { background: #111; border: 1px solid #1e1e2e; border-radius: 8px; padding: 1rem; }
+.meta-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.meta-value { font-size: 20px; font-weight: 700; color: #00d4ff; }
+.meta-value.green { color: #00ff88; }
+.meta-value.yellow { color: #ffcc00; }
+.meta-value.small { font-size: 13px; margin-top: 2px; }
+.actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+.btn { background: #111; border: 1px solid #2a2a3e; border-radius: 6px; padding: 12px 8px; font-family: 'Courier New', monospace; font-size: 12px; color: #aaa; cursor: pointer; text-align: center; transition: all 0.15s; }
+.btn:hover { background: #1a1a2e; border-color: #00d4ff; color: #00d4ff; }
+.btn-icon { font-size: 18px; display: block; margin-bottom: 6px; }
+.ask-row { display: flex; gap: 10px; margin-bottom: 1.5rem; }
+.ask-input { flex: 1; background: #111; border: 1px solid #2a2a3e; border-radius: 6px; padding: 10px 14px; font-family: 'Courier New', monospace; font-size: 13px; color: #e0e0e0; outline: none; }
+.ask-input:focus { border-color: #00d4ff; }
+.ask-input::placeholder { color: #444; }
+.ask-btn { background: #0a1a2e; border: 1px solid #00d4ff; border-radius: 6px; padding: 10px 20px; font-family: 'Courier New', monospace; font-size: 12px; color: #00d4ff; cursor: pointer; white-space: nowrap; }
+.ask-btn:hover { background: #00d4ff; color: #000; }
+.result-card { background: #111; border: 1px solid #1e1e2e; border-radius: 8px; padding: 1.5rem; min-height: 200px; }
+.result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; padding-bottom: 10px; border-bottom: 1px solid #1e1e2e; }
+.result-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #555; }
+.confidence-badge { font-size: 10px; padding: 3px 10px; border-radius: 4px; font-weight: 700; }
+.badge-high { background: #0a2a1a; color: #00ff88; border: 1px solid #00ff88; }
+.badge-med { background: #2a2000; color: #ffcc00; border: 1px solid #ffcc00; }
+.badge-low { background: #2a0a0a; color: #ff6666; border: 1px solid #ff6666; }
+.badge-live { background: #0a1a2e; color: #00d4ff; border: 1px solid #00d4ff; }
+.finding { font-size: 14px; color: #e0e0e0; line-height: 1.6; margin-bottom: 1rem; padding: 10px 12px; background: #0a0a1a; border-left: 3px solid #00d4ff; border-radius: 0 4px 4px 0; }
+.terminal-table { background: #0a0a0a; border: 1px solid #1e1e2e; border-radius: 6px; padding: 1rem; margin: 1rem 0; overflow-x: auto; }
+.terminal-table pre { font-family: 'Courier New', monospace; font-size: 12px; color: #00ff88; line-height: 1.5; white-space: pre; margin: 0; }
+.meta-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid #1a1a1a; }
+.meta-strip-item { font-size: 10px; color: #444; }
+.meta-strip-item span { color: #666; }
+.section { margin-bottom: 12px; }
+.section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 4px; }
+.section-body { font-size: 12px; color: #aaa; line-height: 1.7; }
+.disclaimer { font-size: 11px; color: #444; margin-top: 12px; line-height: 1.6; border-top: 1px solid #1a1a1a; padding-top: 10px; }
+.empty-state { text-align: center; padding: 3rem; color: #333; font-size: 13px; }
+.empty-state .big { font-size: 32px; margin-bottom: 12px; }
+.loading { text-align: center; padding: 2rem; color: #00d4ff; font-size: 13px; }
+.error-block { background: #1a0000; border: 1px solid #ff4444; border-radius: 6px; padding: 1rem; color: #ff6666; font-size: 13px; }
+.fields-used { font-size: 10px; color: #333; margin-top: 6px; font-style: italic; }
+.footer { text-align: center; padding: 2rem; color: #333; font-size: 11px; border-top: 1px solid #1a1a1a; margin-top: 2rem; }
+.router-badge { font-size: 10px; color: #333; background: #111; border: 1px solid #222; border-radius: 3px; padding: 2px 6px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">
+    <div class="logo-name">TAOSCOUT</div>
+    <div class="logo-sub">Bittensor Operator Intelligence v1.3</div>
+  </div>
+  <div class="status-bar">
+    <div class="status-item"><span class="status-dot" id="dot-ollama"></span>Ollama</div>
+    <div class="status-item"><span class="status-dot" id="dot-taostats"></span>TaoStats</div>
+    <div class="status-item">TAO <span id="hdr-price">-</span></div>
+    <div class="status-item">Block <span id="hdr-block">-</span></div>
+    <div class="status-item">Age <span id="hdr-age">-</span>m</div>
+  </div>
+</div>
+<div class="main">
+  <div class="meta-row">
+    <div class="meta-card"><div class="meta-label">TAO / USD</div><div class="meta-value green" id="meta-price">-</div></div>
+    <div class="meta-card"><div class="meta-label">Block Height</div><div class="meta-value small" id="meta-block">-</div></div>
+    <div class="meta-card"><div class="meta-label">Snapshot Age</div><div class="meta-value yellow" id="meta-age">-</div></div>
+    <div class="meta-card"><div class="meta-label">Subnets / Coverage</div><div class="meta-value small" id="meta-coverage">-</div></div>
+  </div>
+  <div class="actions">
+    <button class="btn" onclick="runAction('brief')"><span class="btn-icon">&#9636;</span>Daily Brief</button>
+    <button class="btn" onclick="runAction('scan')"><span class="btn-icon">&#8857;</span>Opportunity Scan</button>
+    <button class="btn" onclick="runAction('refresh')"><span class="btn-icon">&#8634;</span>Refresh Chain</button>
+    <button class="btn" onclick="runAction('status')"><span class="btn-icon">&#10792;</span>System Status</button>
+  </div>
+  <div class="ask-row">
+    <input class="ask-input" id="question" type="text" placeholder="Ask: top 10 emission | best subnets for 3090 | movers 24h | risk scan | sn4 detail" />
+    <button class="ask-btn" onclick="runAction('ask')">Ask</button>
+  </div>
+  <div class="result-card" id="result">
+    <div class="empty-state"><div class="big">&#11041;</div>Select an action or ask a question.<br>Results appear as deterministic operator tables.</div>
+  </div>
+</div>
+<div class="footer">TaoScout v1.3.0 | Finney mainnet | Local inference on 3090 | Not financial advice</div>
+<script>
+const API='https://integration-substitute-adam-revolutionary.trycloudflare.com';
+const API_KEY='taoscout-local-key-1';
+const H={'Content-Type':'application/json','X-API-Key':API_KEY};
+
+function confBadge(c){
+  if(!c)return '<span class="confidence-badge badge-live">Live</span>';
+  const l=c.toLowerCase();
+  if(l.includes('high'))return '<span class="confidence-badge badge-high">High confidence</span>';
+  if(l.includes('medium'))return '<span class="confidence-badge badge-med">Medium confidence</span>';
+  return '<span class="confidence-badge badge-low">Low confidence</span>';
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderResult(d,title){
+  const finding=d.finding||'';
+  const basis=d.basis||'';
+  const confidence=d.confidence||'';
+  const gaps=d.gaps||'';
+  const table=d.formatted_table||'';
+  const intent=d.router_intent||'';
+  const fields=(d.fields_used||[]).join(', ');
+  const computation=d.computation||'';
+  const disclaimer=d.disclaimer||'';
+
+  let html='<div class="result-header"><div>';
+  html+='<span class="result-title">'+escHtml(title)+'</span>';
+  if(intent)html+='<span class="router-badge">'+escHtml(intent)+'</span>';
+  html+='</div>'+confBadge(confidence)+'</div>';
+
+  if(finding)html+='<div class="finding">'+escHtml(finding)+'</div>';
+
+  if(table){
+    html+='<div class="terminal-table"><pre>'+escHtml(table)+'</pre></div>';
+  }
+
+  if(basis)html+='<div class="section"><div class="section-label">Basis</div><div class="section-body">'+escHtml(basis)+'</div></div>';
+  if(gaps&&gaps.toLowerCase()!='none'&&gaps.toLowerCase()!='none.')
+    html+='<div class="section"><div class="section-label">Gaps</div><div class="section-body">'+escHtml(gaps)+'</div></div>';
+  if(computation)html+='<div class="fields-used">Computation: '+escHtml(computation)+'</div>';
+  if(fields)html+='<div class="fields-used">Fields: '+escHtml(fields)+'</div>';
+  if(disclaimer)html+='<div class="disclaimer">'+escHtml(disclaimer)+'</div>';
+
+  const snap=d.snapshot_time||'';
+  const block=d.block_height||'';
+  const tao=d.tao_price_usd||'';
+  if(snap||block){
+    html+='<div class="meta-strip">';
+    if(snap)html+='<div class="meta-strip-item">Snapshot <span>'+escHtml(snap)+'</span></div>';
+    if(block)html+='<div class="meta-strip-item">Block <span>'+escHtml(block)+'</span></div>';
+    if(tao)html+='<div class="meta-strip-item">TAO/USD <span>'+escHtml(tao)+'</span></div>';
+    html+='</div>';
+  }
+  return html;
+}
+
+function renderStatus(d){
+  const txt='API v'+(d.version||'?')+'  |  Model: '+(d.model||'?')+'\n'+
+    'Ollama    : '+(d.ollama?'connected':'not connected')+'\n'+
+    'TaoStats  : '+(d.taostats_connected?'connected':'not connected')+'\n'+
+    'Analytics : '+(d.analytics_engine?'on':'off')+'\n'+
+    'TAO/USD   : '+(d.tao_price_usd?'$'+d.tao_price_usd:'unavailable')+'\n'+
+    'Snapshot  : '+(d.snapshot_time||'none')+'\n'+
+    'Age       : '+(d.snapshot_age_minutes||'?')+'min\n'+
+    'DB Snaps  : '+(d.db_snapshots||'?')+'\n'+
+    'Delta     : '+(d.has_delta_data?'YES':'NO')+'\n'+
+    'Coverage  : '+(d.metadata_coverage||'?');
+  return '<div class="result-header"><div class="result-title">System Status</div>'+
+    '<span class="confidence-badge badge-'+(d.ollama?'high':'low')+'">'+(d.ollama?'Online':'Offline')+'</span></div>'+
+    '<div class="terminal-table"><pre>'+escHtml(txt)+'</pre></div>';
+}
+
+function setLoading(t){
+  document.getElementById('result').innerHTML=
+    '<div class="result-header"><div class="result-title">'+escHtml(t)+'</div></div>'+
+    '<div class="loading">Querying chain data</div>';
+}
+
+function setError(m){
+  document.getElementById('result').innerHTML=
+    '<div class="error-block">Error: '+escHtml(m)+'<br><small>Make sure TaoScout API is running at '+API+'</small></div>';
+}
+
+async function runAction(action){
+  document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+
+  if(action==='ask'){
+    const q=document.getElementById('question').value.trim();
+    if(!q)return;
+    setLoading(q.length>60?q.slice(0,60)+'...':q);
+    try{
+      const r=await fetch(API+'/ask',{method:'POST',headers:H,body:JSON.stringify({question:q})});
+      const d=await r.json();
+      document.getElementById('result').innerHTML=renderResult(d,q);
+    }catch(e){setError('Could not reach TaoScout API.');}
+    return;
+  }
+
+  if(action==='refresh'){
+    setLoading('Refreshing chain data');
+    try{
+      const r=await fetch(API+'/admin/refresh',{method:'POST',headers:H});
+      const d=await r.json();
+      const txt='Status  : '+(d.status||'?')+'\nBlock   : '+(d.block||'?')+'\nSubnets : '+(d.subnets||'?')+'\nTAO/USD : $'+(d.tao_price_usd||'?')+'\nTime    : '+(d.timestamp?d.timestamp.slice(0,19)+' UTC':'?');
+      document.getElementById('result').innerHTML=
+        '<div class="result-header"><div class="result-title">Chain Refresh</div><span class="confidence-badge badge-high">Complete</span></div>'+
+        '<div class="terminal-table"><pre>'+escHtml(txt)+'</pre></div>'+
+        '<div class="disclaimer">Next auto-refresh in 30 minutes via cron.</div>';
+    }catch(e){setError('Refresh failed.');}
+    return;
+  }
+
+  if(action==='status'){
+    setLoading('System Status');
+    try{
+      const r=await fetch(API+'/status',{headers:H});
+      const d=await r.json();
+      document.getElementById('result').innerHTML=renderStatus(d);
+    }catch(e){setError('Could not reach API.');}
+    return;
+  }
+
+  const titles={brief:'Daily Operator Brief',scan:'Opportunity Scan'};
+  setLoading(titles[action]||action);
+  try{
+    const r=await fetch(API+'/'+action,{headers:H});
+    const d=await r.json();
+    document.getElementById('result').innerHTML=renderResult(d,titles[action]);
+  }catch(e){setError('Could not reach TaoScout API.');}
+}
+
+document.getElementById('question').addEventListener('keydown',e=>{
+  if(e.key==='Enter')runAction('ask');
+});
+
+async function pollStatus(){
+  try{
+    const r=await fetch(API+'/health');
+    const d=await r.json();
+    document.getElementById('dot-ollama').className='status-dot '+(d.ollama?'green':'red');
+    document.getElementById('dot-taostats').className='status-dot '+(d.taostats_connected?'green':'yellow');
+    document.getElementById('hdr-price').textContent=d.tao_price_usd?'$'+d.tao_price_usd.toFixed(2):'-';
+    document.getElementById('hdr-age').textContent=d.snapshot_age_minutes||'-';
+    document.getElementById('meta-price').textContent=d.tao_price_usd?'$'+d.tao_price_usd.toFixed(2):'-';
+    document.getElementById('meta-age').textContent=(d.snapshot_age_minutes||'-')+'m';
+  }catch(e){
+    document.getElementById('dot-ollama').className='status-dot red';
+    document.getElementById('dot-taostats').className='status-dot red';
+  }
+  try{
+    const r=await fetch(API+'/status',{headers:H});
+    const d=await r.json();
+    document.getElementById('hdr-block').textContent=d.snapshot_time?d.snapshot_time.split(' ')[0]:'-';
+    document.getElementById('meta-block').textContent=d.snapshot_time||'-';
+    document.getElementById('meta-coverage').textContent=d.metadata_coverage||'-';
+  }catch(e){}
+}
+
+pollStatus();
+setInterval(pollStatus,30000);
+</script>
+</body>
+</html>
