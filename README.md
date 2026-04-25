@@ -1,37 +1,45 @@
 # TaoScout
-Bittensor operator intelligence agent. Tracks 129 subnets in real time.
+
+Bittensor operator intelligence agent for subnet analytics, GPU-fit ranking, movers, risk scoring, and operator actions.
 
 ## What it does
-- Live subnet emission, burn, fill tracking
-- GPU fit scoring for 24GB / 32GB / 48GB / 96GB hardware
-- Daily operator dashboard with actionable alerts
-- Natural language Bittensor questions
-- 24h emission movers and trend tracking
-- Deregistration risk scoring
 
-## Hardware Requirements
-- Minimum: RTX 3090 24GB
-- Recommended: RTX 4090 24GB or RTX 5090 32GB
+- Tracks live Bittensor subnet emissions, burn, fill, and trends
+- Scores opportunities by GPU class: 24GB / 32GB / 48GB / 96GB
+- Flags movers, volatility, deregistration risk, and operator actions
+- Provides FastAPI endpoints and simple dashboard access
+- Supports natural-language questions through local inference
 
-## Quick Start
+## Hardware
+
+Minimum:
+- RTX 3090 24GB
+
+Preferred:
+- RTX 4090 / RTX 5090
+
+Helper GPUs:
+- RTX 3060s can be used for background/routing lanes, not minimum runtime
+
+## Setup
+
 cp config.example.json config.json
-# Add your keys to config.json
 pip install -r requirements.txt
 python3 api.py
 
-## Endpoints (require X-API-Key header)
-GET  /health       system status
-GET  /brief        operator brief
-GET  /dashboard    daily dashboard with actions
-GET  /scan         top 5 opportunities
-GET  /rankings     GPU class rankings
-GET  /movers       emission movers
-POST /ask          natural language query
-GET  /query-stats  usage analytics
+## Endpoints
 
-## Environment Variables
-TAOSTATS_API_KEY — from taostats.io
-OLLAMA_HOST — default http://127.0.0.1:11434
+- GET /health
+- GET /dashboard
+- GET /brief
+- GET /scan
+- GET /rankings
+- GET /movers
+- POST /ask
+- GET /query-stats
 
-## Not financial advice
-TaoScout is automated operator tooling. Informational only.
+Protected endpoints require X-API-Key.
+
+## Notes
+
+TaoScout is operator tooling. Informational only. Not financial advice.
