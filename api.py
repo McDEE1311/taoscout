@@ -27,6 +27,7 @@ HOST     = CFG.get("api_host", "127.0.0.1")
 import sys
 sys.path.insert(0, str(SCRIPT_DIR))
 from daily_dashboard import build_dashboard
+from alerts import build_alerts, format_alerts_table
 from query_log import log_query, get_stats
 from scout import (
     api_ask, api_brief, api_scan, api_status,
@@ -194,6 +195,17 @@ async def dashboard(key: str = Depends(verify_key)):
         return result
     finally:
         release_job_slot(key)
+
+
+@app.get("/alerts")
+async def alerts(hours: int = 24, key: str = Depends(verify_key)):
+    check_rate_limit(key, "alerts")
+    if hours not in [1, 6, 12, 24, 48, 72]:
+        raise HTTPException(status_code=400, detail="hours must be 1,6,12,24,48,72")
+    result = build_alerts(hours=hours)
+    if "error" in result:
+        raise HTTPException(status_code=503, detail=result["error"])
+    return result
 
 @app.get("/query-stats")
 async def query_stats(hours: int = 24, key: str = Depends(verify_key)):
