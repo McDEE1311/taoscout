@@ -7,3 +7,5 @@ __pycache__/
 *.bak
 *.bak2
 *.bak3
+local_secrets_backup/
+scratch_backup/
