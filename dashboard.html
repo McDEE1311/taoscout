@@ -87,6 +87,8 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
   <div class="actions">
     <button class="btn" onclick="runAction('brief')"><span class="btn-icon">&#9636;</span>Daily Brief</button>
     <button class="btn" onclick="runAction('scan')"><span class="btn-icon">&#8857;</span>Opportunity Scan</button>
+    <button class="btn" onclick="runAction('sniper')"><span class="btn-icon">◎</span>Sniper Mode</button>
+    <button class="btn" onclick="runAction('alerts')"><span class="btn-icon">!</span>Alerts</button>
     <button class="btn" onclick="runAction('refresh')"><span class="btn-icon">&#8634;</span>Refresh Chain</button>
     <button class="btn" onclick="runAction('status')"><span class="btn-icon">&#10792;</span>System Status</button>
   </div>
@@ -100,7 +102,7 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
 </div>
 <div class="footer">TaoScout v1.3.0 | Finney mainnet | Local inference on 3090 | Not financial advice</div>
 <script>
-const API='https://integration-substitute-adam-revolutionary.trycloudflare.com';
+const API='https://missile-toner-hired-dialog.trycloudflare.com';
 const API_KEY='taoscout-local-key-1';
 const H={'Content-Type':'application/json','X-API-Key':API_KEY};
 
@@ -224,6 +226,58 @@ async function runAction(action){
     return;
   }
 
+  if(action==='sniper'){
+    setLoading('Sniper Mode');
+    try{
+      const r=await fetch(API+'/sniper?gpu_class=24gb&risk=high&budget_tao=1.0',{headers:H});
+      const d=await r.json();
+      let html='<div class="result-header"><div class="result-title">Sniper Mode</div><span class="confidence-badge badge-high">Live</span></div>';
+      if(d.top_pick){
+        const t=d.top_pick;
+        html+='<div class="finding">Top Pick: SN'+t.netuid+' '+t.name+' — '+t.signal+' (score '+t.score+'/100)</div>';
+        html+='<div class="terminal-table"><pre>'+escHtml(
+          'Signal : '+t.signal+' | Score: '+t.score+'/100\n'+
+          'Entry  : '+t.entry_cost_tao+'t ($'+t.entry_cost_usd+')\n'+
+          'Expect : $'+t.expected_per_tempo_usd+'/tempo\n'+
+          'Reason : '+t.reasoning
+        )+'</pre></div>';
+      }
+      if(d.results&&d.results.length){
+        let rows='\n  Rank  Subnet  Name              Signal   Score  Entry($)  Exp($/tempo)\n';
+        rows+='  ────  ──────  ────────────────  ───────  ─────  ────────  ────────────\n';
+        d.results.forEach((r,i)=>{
+          rows+='  '+(i+1)+'     SN'+String(r.netuid).padEnd(5)+' '+r.name.slice(0,16).padEnd(16)+'  '+r.signal.padEnd(7)+'  '+String(r.score).padEnd(5)+'  $'+String(r.entry_cost_usd).padEnd(8)+'  $'+r.expected_per_tempo_usd+'\n';
+        });
+        html+='<div class="terminal-table"><pre>'+escHtml(rows)+'</pre></div>';
+      }
+      html+='<div class="disclaimer">Entry signals are algorithmic estimates. Not financial advice.</div>';
+      document.getElementById("result").innerHTML=html;
+    }catch(e){setError('Sniper failed: '+e);}
+    return;
+  }
+
+  if(action==='alerts'){
+    setLoading('Alerts');
+    try{
+      const r=await fetch(API+'/alerts?hours=24',{headers:H});
+      const d=await r.json();
+      let html='<div class="result-header"><div class="result-title">Alerts</div><span class="confidence-badge badge-'+(d.summary&&d.summary.critical>0?'low':'med')+'">'+((d.summary&&d.summary.total)||0)+' alerts</span></div>';
+      if(d.alerts&&d.alerts.length){
+        let rows='\n  Priority  Type                    Subnet  Detail\n';
+        rows+='  ────────  ──────────────────────  ──────  ──────────────────────────────\n';
+        d.alerts.forEach(a=>{
+          rows+='  '+a.priority.padEnd(8)+'  '+a.type.slice(0,22).padEnd(22)+'  SN'+String(a.netuid||'').padEnd(4)+'  '+(a.message||'').slice(0,40)+'\n';
+        });
+        html+='<div class="terminal-table"><pre>'+escHtml(rows)+'</pre></div>';
+      } else {
+        html+='<div class="finding">No alerts triggered in last 24h.</div>';
+      }
+      html+='<div class="disclaimer">TaoScout automated alerts. Informational only. Not financial advice.</div>';
+      document.getElementById("result").innerHTML=html;
+    }catch(e){setError('Alerts failed: '+e);}
+    return;
+  }
+
   const titles={brief:'Daily Operator Brief',scan:'Opportunity Scan'};
   setLoading(titles[action]||action);
   try{
@@ -241,8 +295,8 @@ async function pollStatus(){
   try{
     const r=await fetch(API+'/health');
     const d=await r.json();
-    document.getElementById('dot-ollama').className='status-dot '+(d.ollama?'green':'red');
-    document.getElementById('dot-taostats').className='status-dot '+(d.taostats_connected?'green':'yellow');
+    document.getElementById('dot-ollama').className='status-dot '+(d.ollama_enabled?'green':'red');
+    document.getElementById('dot-taostats').className='status-dot '+(d.taostats_configured?'green':'yellow');
     document.getElementById('hdr-price').textContent=d.tao_price_usd?'$'+d.tao_price_usd.toFixed(2):'-';
     document.getElementById('hdr-age').textContent=d.snapshot_age_minutes||'-';
     document.getElementById('meta-price').textContent=d.tao_price_usd?'$'+d.tao_price_usd.toFixed(2):'-';
@@ -262,6 +316,25 @@ async function pollStatus(){
 
 pollStatus();
 setInterval(pollStatus,30000);
+
+async function loadSniper() {
+  setLoading();
+  const r = await fetch(API + "/sniper?gpu_class=24gb&risk=high&budget_tao=1.0", {
+    headers: {"X-API-Key": API_KEY}
+  });
+  const data = await r.json();
+  showJson(data);
+}
+
+async function loadAlerts() {
+  setLoading();
+  const r = await fetch(API + "/alerts", {
+    headers: {"X-API-Key": API_KEY}
+  });
+  const data = await r.json();
+  showJson(data);
+}
+
 </script>
 </body>
 </html>

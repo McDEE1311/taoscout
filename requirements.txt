@@ -1,6 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 requests
-aiohttp
 python-dotenv
-bittensor
+httpx

@@ -216,9 +216,12 @@ def github_search_subnet(netuid, subnet_name=""):
     if cached and is_fresh(ts, mins=120):
         return cached
 
-    queries = [f"bittensor subnet {netuid}"]
-    if subnet_name and subnet_name.lower() not in ("unknown", ""):
-        queries.append(f"bittensor {subnet_name}")
+    queries = []
+    if subnet_name and subnet_name.lower() not in ("unknown", "", "unverified"):
+        queries.append(f"{subnet_name} bittensor subnet")
+        queries.append(f"bittensor {subnet_name} miner")
+    else:
+        queries.append(f"bittensor subnet {netuid} miner")
 
     headers = {"User-Agent": "TaoScout/1.3", "Accept": "application/vnd.github+json"}
     if GITHUB_TOKEN:
@@ -483,9 +486,20 @@ DISCLAIMER_TEXT = (
 
 def ollama_ok():
     try:
-        urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=3)
+        urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2)
         return True
     except: return False
+
+def ollama_unavailable_response(question):
+    """Return structured response when Ollama is not available."""
+    return {
+        "finding": "LLM inference unavailable — running in data-only mode.",
+        "basis": "Ollama not reachable. Deterministic analytics still functional.",
+        "confidence": "HIGH",
+        "gaps": "Natural language answers require Ollama. Use /rankings, /movers, /sniper, /alerts for data.",
+        "mode": "cpu_eval",
+        "disclaimer": "TaoScout is automated. Informational only. Not financial advice.",
+    }
 
 def chat(messages, silent=False):
     payload = json.dumps({"model": MODEL, "messages": messages, "stream": True}).encode()
@@ -540,6 +554,8 @@ def parse_structured(text):
 
 # ── API functions ─────────────────────────────────────────────────────────────
 def api_ask(question, force=False):
+    if not ollama_ok():
+        return ollama_unavailable_response(question)
     d, src = get_chain_data(force)
     if not d: return {"error": f"No chain data: {src}"}
     enrich = load_enrichment()

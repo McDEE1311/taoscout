@@ -21,8 +21,8 @@ def load_config():
 
 CFG      = load_config()
 API_KEYS = CFG.get("api_keys", ["taoscout-local-key-1"])
-PORT     = CFG.get("api_port", 8765)
-HOST     = CFG.get("api_host", "127.0.0.1")
+PORT     = 8765
+HOST     = "0.0.0.0"
 
 import sys
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -90,7 +90,7 @@ def verify_key(request: Request):
 app = FastAPI(
     title="TaoScout API",
     description="Bittensor Operator Intelligence — v1.3.0",
-    version="1.3.0",
+    version="1.3.2",
     docs_url="/docs",
 )
 
@@ -109,16 +109,11 @@ class AskRequest(BaseModel):
 
 @app.get("/health")
 async def health():
-    s = api_status()
     return {
-        "status":               "ok",
-        "version":              "1.3.0",
-        "ollama":               s.get("ollama"),
-        "snapshot_age_minutes": s.get("snapshot_age_minutes"),
-        "taostats_connected":   s.get("taostats_connected"),
-        "analytics_engine":     s.get("analytics_engine"),
-        "tao_price_usd":        s.get("tao_price_usd"),
-        "timestamp":            datetime.now(timezone.utc).isoformat(),
+        "status":  "ok",
+        "service": "taoscout",
+        "version": "1.3.4",
+        "mode":    "cpu_eval",
     }
 
 @app.get("/status")
@@ -300,4 +295,31 @@ if __name__ == "__main__":
     print(f"  Host : {HOST}:{PORT}")
     print(f"  Keys : {len(API_KEYS)} configured")
     print(f"  Docs : http://{HOST}:{PORT}/docs\n")
-    uvicorn.run("api:app", host=HOST, port=PORT, reload=False)
+    import os
+    docker_mode = os.environ.get("DOCKER", "false").lower() == "true" or os.path.exists("/.dockerenv")
+    bind_host = "0.0.0.0" if docker_mode else HOST
+    uvicorn.run("api:app", host=bind_host, port=PORT, reload=False)
+
+# ── Sniper Mode ───────────────────────────────────────────────────────────────
+@app.get("/sniper")
+async def sniper(
+    gpu_class: str = "24gb",
+    risk: str = "medium",
+    budget_tao: float = 1.0,
+    key: str = Depends(verify_key)
+):
+    check_rate_limit(key, "sniper")
+    try:
+        import sniper as SNIPER
+        return SNIPER.build_sniper(
+            gpu_class=gpu_class,
+            risk=risk,
+            budget_tao=budget_tao
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/robots.txt")
+async def robots():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("User-agent: *\nAllow: /\n")
