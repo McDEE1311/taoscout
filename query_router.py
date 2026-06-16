@@ -20,6 +20,9 @@ INTENTS = [
     # GPU / hardware queries
     ("gpu_ranking",       [r"3090", r"4090", r"5090", r"6000", r"rtx", r"gpu", r"vram", r"hardware", r"24gb", r"32gb", r"48gb", r"96gb", r"card", r"mine.*with", r"run.*on"]),
 
+    # Validator trends
+    ("validator_trends",  [r"validator", r"val trend", r"val count", r"who controls", r"stake concentration"]),
+
     # Movers / trends
     ("movers",            [r"mover", r"chang", r"trend", r"increas", r"decreas", r"up.*emission", r"down.*emission", r"momentum", r"24h", r"20h", r"last.*hour"]),
 
@@ -452,6 +455,9 @@ def route(question, chain_data, enrichment, my_netuids, snapshot_count, movers=N
             "TaoScout does not have a metric called miner_awards — emission is the closest equivalent."
         )
 
+    elif intent == "validator_trends":
+        payload = answer_validator_trends(subnets, tao_usd, top_n=10)
+
     elif intent == "investment_scan":
         # Speculative scan — candidates only, not winners
         em_data    = answer_top_emission(subnets, tao_usd, top_n=10)
@@ -610,3 +616,34 @@ Payload summary (use for FINDING/BASIS/CONFIDENCE/GAPS only):
 {json.dumps(compact, indent=2, default=str)}
 
 Write operator summary: FINDING / BASIS / CONFIDENCE / GAPS only. Under 6 lines. No tables."""
+
+def answer_validator_trends(subnets, tao_usd, top_n=10):
+    """Return subnets ranked by validator activity and flow."""
+    rows = []
+    for s in subnets:
+        av = s.get("active_validators", 0) or 0
+        am = s.get("active_miners", 0) or 0
+        flow = s.get("net_flow_1d", 0) or 0
+        em = float(s.get("emission", 0) or 0)
+        if av > 0 or flow != 0:
+            rows.append({
+                "netuid":            s["netuid"],
+                "name":              s.get("name", "Unknown"),
+                "active_validators": av,
+                "active_miners":     am,
+                "net_flow_1d":       round(float(flow), 3),
+                "emission_tao":      round(em, 6),
+                "emission_usd":      round(em * tao_usd, 4) if tao_usd > 0 else None,
+            })
+    rows.sort(key=lambda x: x["active_validators"], reverse=True)
+    return {
+        "intent":           "validator_trends",
+        "question_type":    "VALIDATOR_TRENDS",
+        "fields_used":      ["active_validators", "active_miners", "net_flow_1d", "emission"],
+        "computation":      "Sorted by active_validators DESC. Flow from TaoStats enrichment.",
+        "confidence":       "HIGH",
+        "confidence_reason":"Live data from TaoStats API enrichment",
+        "results":          rows[:top_n],
+        "result_count":     len(rows[:top_n]),
+        "tao_usd":          tao_usd,
+    }

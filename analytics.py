@@ -36,9 +36,21 @@ GPU_CLASSES = {
     },
     "96gb": {
         "label":   "96GB VRAM",
-        "cards":   ["Pro 6000 Blackwell"],
+        "cards":   ["Pro 6000 Blackwell", "A100 80GB", "H100 PCIe"],
         "vram_gb": 96,
         "tier":    "workstation_flagship",
+    },
+    "141gb": {
+        "label":   "141GB VRAM",
+        "cards":   ["H200 SXM", "H200 NVL"],
+        "vram_gb": 141,
+        "tier":    "datacenter_flagship",
+    },
+    "12gb": {
+        "label":   "12GB VRAM",
+        "cards":   ["RTX 3060", "RTX 4060", "RTX 3060 Ti"],
+        "vram_gb": 12,
+        "tier":    "consumer_entry",
     },
 }
 

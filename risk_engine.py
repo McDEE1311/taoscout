@@ -121,6 +121,22 @@ def score_subnet_risk(subnet, movers=None, tao_usd=0.0):
     else:
         flags["overcrowded"] = {"triggered": False, "score": 0}
 
+    # 4.5 Negative alpha flow — TAO leaving the subnet
+    flow_1d = float(subnet.get("net_flow_1d", 0) or 0)
+    if flow_1d < -100:
+        score = min(10, int(abs(flow_1d) / 100))
+        flags["negative_flow"] = {
+            "triggered": True,
+            "score": score,
+            "weight": 10,
+            "severity": "HIGH" if flow_1d < -300 else "MEDIUM",
+            "detail": f"alpha flow {flow_1d:.1f} TAO/day outflow",
+            "metric": f"net_flow_1d={flow_1d:.1f}",
+        }
+        total_risk += score
+    else:
+        flags["negative_flow"] = {"triggered": False, "score": 0}
+
     # 5. Volatility — large emission swings (weight 10)
     if mover_info and mover_info.get("prev_emission", 0) > 0:
         pct_change = abs(mover_info.get("em_pct_change", 0))

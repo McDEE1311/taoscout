@@ -1,0 +1,145 @@
+{
+  "4": {
+    "netuid": 4,
+    "name": "Targon",
+    "repo_url": "https://github.com/manifold-inc/targon",
+    "repo_name": "manifold-inc/targon",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "24GB+ VRAM recommended. RTX 3090/4090 or A100. CUDA 12+.",
+    "readme_summary": "Targon is a deterministic verification subnet. Miners run inference on vLLM-compatible models. Validators verify outputs deterministically."
+  },
+  "19": {
+    "netuid": 19,
+    "name": "Blockmachine",
+    "repo_url": "https://github.com/blockmachinegroup/blockmachine",
+    "repo_name": "blockmachinegroup/blockmachine",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "8GB+ VRAM minimum. 24GB recommended for competitive scoring.",
+    "readme_summary": "Blockmachine subnet for decentralized ML inference and text generation tasks."
+  },
+  "39": {
+    "netuid": 39,
+    "name": "Cathedral/Basilica",
+    "repo_url": "https://github.com/unconst/pretrain",
+    "repo_name": "unconst/pretrain",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "Was GPU compute rental. Now deprecated with zero emission.",
+    "readme_summary": "SN39 was Cathedral/Basilica GPU compute rental subnet. Deprecated. Zero emission."
+  },
+  "44": {
+    "netuid": 44,
+    "name": "Score Vision",
+    "repo_url": "https://github.com/score-technologies/score-vision",
+    "repo_name": "score-technologies/score-vision",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "8GB+ VRAM minimum. 24GB recommended. GPU required for vision inference.",
+    "readme_summary": "Score Vision subnet for sports prediction and computer vision tasks. Miners run vision models to predict sports outcomes."
+  },
+  "50": {
+    "netuid": 50,
+    "name": "Synth",
+    "repo_url": "https://github.com/synth-laboratories/synth",
+    "repo_name": "synth-laboratories/synth",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "8GB+ VRAM. Runs synthetic data generation workloads.",
+    "readme_summary": "Synth subnet for synthetic data generation and augmentation. Miners generate high-quality synthetic training data."
+  },
+  "54": {
+    "netuid": 54,
+    "name": "Yanez MIID",
+    "repo_url": "https://github.com/yanez-compliance/MIID-subnet",
+    "repo_name": "yanez-compliance/MIID-subnet",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "8GB+ VRAM minimum. 24GB recommended for KAV/UAV workloads.",
+    "readme_summary": "MIID Identity subnet. Miners generate synthetic identity data including KAV (Known Attack Vectors) and UAV (Unknown Attack Vectors) for compliance training."
+  },
+  "64": {
+    "netuid": 64,
+    "name": "Chutes",
+    "repo_url": "https://github.com/rayonlabs/chutes-miner",
+    "repo_name": "rayonlabs/chutes-miner",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "Any GPU. A100 SXM preferred for competitive scoring. 3090/4090 viable.",
+    "readme_summary": "Chutes is a serverless GPU compute marketplace on Bittensor. Miners contribute GPU compute, validators route workloads. Egret chutes on A100 hardware earn best."
+  },
+  "95": {
+    "netuid": 95,
+    "name": "Actual",
+    "repo_url": "https://github.com/actualhq/actual-subnet",
+    "repo_name": "actualhq/actual-subnet",
+    "verified": false,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "8GB+ VRAM estimated.",
+    "readme_summary": "Actual Finance subnet. Repo URL unconfirmed \u2014 verify before mining."
+  },
+  "97": {
+    "netuid": 97,
+    "name": "Albedo",
+    "repo_url": "https://github.com/albedo-ai/albedo-subnet",
+    "repo_name": "albedo-ai/albedo-subnet",
+    "verified": false,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "16GB+ VRAM estimated. Vision workloads.",
+    "readme_summary": "Albedo remote sensing subnet. Repo URL unconfirmed \u2014 verify before mining."
+  },
+  "105": {
+    "netuid": 105,
+    "name": "Beam",
+    "repo_url": "https://github.com/opentensor/beam",
+    "repo_name": "opentensor/beam",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "No GPU required for orchestrator. Workers need GPU based on workload type.",
+    "readme_summary": "Beam is Bittensor's streaming compute subnet. Orchestrators route jobs to workers. Workers execute GPU workloads. Requires WebSocket server to earn emissions."
+  },
+  "40": {
+    "netuid": 40,
+    "name": "chunk",
+    "repo_url": "https://github.com/VectorChat/chunking_subnet",
+    "repo_name": "VectorChat/chunking_subnet",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "No GPU required. CPU-only miners viable. RAG chunking workload \u2014 text processing only.",
+    "readme_summary": "Chunk subnet for RAG document chunking and text segmentation. Miners process documents into optimized chunks for retrieval. CPU mining competitive."
+  },
+  "116": {
+    "netuid": 116,
+    "name": "hard_sign",
+    "repo_url": "",
+    "repo_name": "",
+    "verified": false,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "Unknown \u2014 verify before mining.",
+    "readme_summary": "hard_sign subnet. Official repo not yet confirmed. Check TaoStats or Discord before registering."
+  },
+  "57": {
+    "netuid": 57,
+    "name": "gaia",
+    "repo_url": "https://github.com/Gaianet-AI/bittensor-subnet",
+    "repo_name": "Gaianet-AI/bittensor-subnet",
+    "verified": true,
+    "source": "curated_registry",
+    "last_checked": "2026-06-15",
+    "hardware_requirements": "8GB+ VRAM minimum. Runs LLM inference via GaiaNet nodes.",
+    "readme_summary": "Gaia subnet for decentralized LLM inference. Miners run GaiaNet nodes serving AI queries."
+  }
+}

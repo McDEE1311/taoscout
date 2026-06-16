@@ -88,6 +88,7 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
     <button class="btn" onclick="runAction('brief')"><span class="btn-icon">&#9636;</span>Daily Brief</button>
     <button class="btn" onclick="runAction('scan')"><span class="btn-icon">&#8857;</span>Opportunity Scan</button>
     <button class="btn" onclick="runAction('refresh')"><span class="btn-icon">&#8634;</span>Refresh Chain</button>
+    <button class="btn" onclick="runAction('sniper')"><span class="btn-icon">&#9673;</span>Sniper Mode</button>
     <button class="btn" onclick="runAction('status')"><span class="btn-icon">&#10792;</span>System Status</button>
   </div>
   <div class="ask-row">
@@ -100,7 +101,7 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
 </div>
 <div class="footer">TaoScout v1.3.0 | Finney mainnet | Local inference on 3090 | Not financial advice</div>
 <script>
-const API='https://integration-substitute-adam-revolutionary.trycloudflare.com';
+const API='https://api.taoscout.com';
 const API_KEY='taoscout-local-key-1';
 const H={'Content-Type':'application/json','X-API-Key':API_KEY};
 

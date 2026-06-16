@@ -207,6 +207,28 @@ def load_enrichment():
 
 # ── GitHub subnet search ──────────────────────────────────────────────────────
 def github_search_subnet(netuid, subnet_name=""):
+    # Check curated registry first
+    import json as _json
+    from pathlib import Path as _Path
+    repos_file = _Path(__file__).parent / "subnet_repos.json"
+    if repos_file.exists():
+        try:
+            curated = _json.loads(repos_file.read_text())
+            if str(netuid) in curated:
+                r = curated[str(netuid)]
+                return [{
+                    "name":                 r.get("repo_name", ""),
+                    "url":                  r.get("repo_url", ""),
+                    "description":          r.get("readme_summary", ""),
+                    "stars":                0,
+                    "verified":             r.get("verified", False),
+                    "source":               r.get("source", "curated_registry"),
+                    "hardware_requirements":r.get("hardware_requirements", ""),
+                    "last_checked":         r.get("last_checked", ""),
+                }]
+        except Exception:
+            pass
+    # Fallback to GitHub search — label as unverified
     """
     Search GitHub for public repos related to a Bittensor subnet.
     Returns list of repos with stars, description, url.

@@ -188,7 +188,7 @@ async def rankings(gpu: str = "24gb", key: str = Depends(verify_key)):
     return result
 
 
-@app.get("/dashboard")
+@app.get("/dashboard-api")
 async def dashboard(key: str = Depends(verify_key)):
     check_rate_limit(key, "dashboard")
     acquire_job_slot(key)
@@ -249,6 +249,25 @@ async def subnets(key: str = Depends(verify_key)):
         "subnets":       data.get("subnets", []),
     }
 
+
+@app.get("/sniper")
+async def sniper(
+    gpu_class: str = "24gb",
+    risk: str = "medium",
+    budget_tao: float = 1.0,
+    key: str = Depends(verify_key)
+):
+    check_rate_limit(key, "default")
+    try:
+        import sniper as SNIPER
+        return SNIPER.build_sniper(
+            gpu_class=gpu_class,
+            risk=risk,
+            budget_tao=budget_tao
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/admin/refresh")
 async def admin_refresh(key: str = Depends(verify_key)):
     check_rate_limit(key, "default")
@@ -290,13 +309,15 @@ async def admin_stats(key: str = Depends(verify_key)):
     }
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard():
+async def root():
+    landing_file = SCRIPT_DIR / "landing.html"
+    if landing_file.exists():
+        return HTMLResponse(content=landing_file.read_text(), status_code=200)
     dashboard_file = SCRIPT_DIR / "dashboard.html"
     if dashboard_file.exists():
         return HTMLResponse(content=dashboard_file.read_text(), status_code=200)
-    return HTMLResponse(content="""<html><body style="background:#0a0a0a;color:#00ff88;font-family:monospace;padding:2rem">
-    <h2>TaoScout API v1.3.0</h2><p>Running. Dashboard not found.</p>
-    <p><a href="/docs" style="color:#00aaff">API Docs</a></p></body></html>""")
+    return HTMLResponse(content="<h1>TaoScout</h1>", status_code=200)
+
 
 @app.get("/flow")
 async def flow_overview(key: str = Depends(verify_key)):
@@ -517,6 +538,23 @@ async def alpha_signals_endpoint(min_relevance: int = 40, key: str = Depends(ver
         raise HTTPException(status_code=500, detail=f"Alpha signals error: {e}")
 
 
+
+# ── TaoScout Auth / Payment Routes ────────────────────────────────────────────
+try:
+    from taoscout_auth import (
+        PLANS, create_order, confirm_order, verify_pin, hash_pin,
+        create_session, verify_session, delete_session,
+        start_payment_watcher, start_expiration_checker,
+        check_pending_payments, get_conn, ENV, PAYMENT_ADDRESS,
+        create_invite, use_invite, get_order_status
+    )
+    exec(open(str(SCRIPT_DIR / "taoscout_routes.py")).read())
+    print("TaoScout auth/payment routes loaded")
+except Exception as e:
+    import traceback
+    print(f"WARNING: TaoScout auth/payment routes failed to load: {e}")
+    traceback.print_exc()
+
 if __name__ == "__main__":
     import uvicorn
     print(f"\n  TaoScout API v1.3.0 — Launch Hardened")
@@ -524,3 +562,79 @@ if __name__ == "__main__":
     print(f"  Keys : {len(API_KEYS)} configured")
     print(f"  Docs : http://{HOST}:{PORT}/docs\n")
     uvicorn.run("api:app", host=HOST, port=PORT, reload=False)
+# ── Subscriber database ────────────────────────────────────────────────────────
+# Add this to api.py after imports
+
+import sqlite3
+import re
+from pathlib import Path
+
+SUBSCRIBERS_DB = Path(__file__).parent / "data" / "subscribers.db"
+
+def init_subscribers_db():
+    conn = sqlite3.connect(str(SUBSCRIBERS_DB))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS subscribers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            plan TEXT DEFAULT 'free',
+            source TEXT DEFAULT 'landing',
+            created_at TEXT DEFAULT (datetime('now')),
+            active INTEGER DEFAULT 1
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_subscribers_db()
+
+def is_valid_email(email: str) -> bool:
+    return bool(re.match(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$', email))
+
+# ── Subscribe endpoint ─────────────────────────────────────────────────────────
+from pydantic import BaseModel
+
+class SubscribeRequest(BaseModel):
+    email: str
+    source: str = "landing"
+
+@app.post("/subscribe")
+async def subscribe(body: SubscribeRequest):
+    email = body.email.strip().lower()
+    if not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    try:
+        conn = sqlite3.connect(str(SUBSCRIBERS_DB))
+        conn.execute(
+            "INSERT INTO subscribers (email, source) VALUES (?, ?)",
+            (email, body.source)
+        )
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "message": "You're on the list!"}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Already subscribed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Could not save subscription")
+
+@app.get("/admin/subscribers")
+async def get_subscribers(key: str = Depends(verify_key)):
+    """Admin only — list all subscribers."""
+    conn = sqlite3.connect(str(SUBSCRIBERS_DB))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT id, email, plan, source, created_at, active FROM subscribers ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return {
+        "count": len(rows),
+        "subscribers": [dict(r) for r in rows]
+    }
+
+@app.get("/landing", response_class=HTMLResponse)
+async def landing():
+    """Serve the landing page."""
+    landing_file = SCRIPT_DIR / "landing.html"
+    if landing_file.exists():
+        return HTMLResponse(content=landing_file.read_text(), status_code=200)
+    raise HTTPException(status_code=404, detail="Landing page not found")

@@ -19,7 +19,7 @@ OLLAMA_MODEL   = "llama3.1:latest"
 WALLET_NAME    = "tao_wallet"
 HOTKEY_NAME    = "sn39_miner"
 HOTKEY_SS58    = "5G9byaaFsMrDgutGqcsrRCDpDnqCmUEChZ3WFWSLQp9szbPH"
-DISPLAY_NAME   = "TaoScout"
+DISPLAY_NAME   = "TaoScout-SN39"
 BIO            = "Bittensor operator intelligence agent by McDEE — Tennessee"
 
 # Cards to mine (start with one)

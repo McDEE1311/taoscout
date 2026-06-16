@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaoScout — Bittensor Intelligence for Miners & Operators</title>
+<meta name="description" content="Daily subnet intelligence, emission alerts, GPU rankings, and opportunity scans for Bittensor miners, validators, and delegators.">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--bg2:#111;--bg3:#161616;
+  --border:#1e1e2e;--border2:#2a2a3e;
+  --cyan:#00d4ff;--green:#00ff88;--yellow:#ffcc00;--red:#ff4444;
+  --text:#e0e0e0;--muted:#888;--dim:#444;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;line-height:1.6}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,10,0.95);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:56px;backdrop-filter:blur(10px)}
+.nav-logo{font-size:18px;font-weight:700;color:var(--cyan);letter-spacing:2px}
+.nav-links{display:flex;gap:24px;align-items:center}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:12px;letter-spacing:1px;text-transform:uppercase;transition:color 0.2s}
+.nav-links a:hover{color:var(--cyan)}
+.nav-cta{background:var(--cyan);color:#000;padding:8px 20px;border-radius:4px;font-size:12px;font-weight:700;text-decoration:none;letter-spacing:1px}
+.nav-cta:hover{background:#00b8d9;color:#000!important}
+
+/* HERO */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 2rem 4rem;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 0%,rgba(0,212,255,0.06) 0%,transparent 60%);pointer-events:none}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:20px;padding:6px 16px;font-size:11px;color:var(--cyan);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:2rem}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.hero h1{font-size:clamp(2rem,5vw,3.5rem);font-weight:700;line-height:1.2;margin-bottom:1.5rem;letter-spacing:-1px}
+.hero h1 span{color:var(--cyan)}
+.hero p{font-size:clamp(14px,2vw,18px);color:var(--muted);max-width:600px;margin-bottom:3rem;font-family:sans-serif;font-weight:400;line-height:1.7}
+.hero-signup{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:2rem}
+.hero-signup input{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:14px 20px;font-family:'Courier New',monospace;font-size:14px;color:var(--text);outline:none;width:300px;max-width:100%}
+.hero-signup input:focus{border-color:var(--cyan)}
+.hero-signup input::placeholder{color:var(--dim)}
+.btn-primary{background:var(--cyan);color:#000;border:none;border-radius:6px;padding:14px 28px;font-family:'Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:all 0.2s;white-space:nowrap}
+.btn-primary:hover{background:#00b8d9;transform:translateY(-1px)}
+.hero-note{font-size:11px;color:var(--dim)}
+.hero-stats{display:flex;gap:3rem;margin-top:4rem;flex-wrap:wrap;justify-content:center}
+.hero-stat{text-align:center}
+.hero-stat-num{font-size:28px;font-weight:700;color:var(--cyan)}
+.hero-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+
+/* TICKER */
+.ticker{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:12px 0;overflow:hidden}
+.ticker-inner{display:flex;gap:3rem;animation:scroll 20s linear infinite;white-space:nowrap;width:max-content}
+@keyframes scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.ticker-item{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.ticker-item span{color:var(--cyan)}
+.ticker-item .up{color:var(--green)}
+.ticker-item .down{color:var(--red)}
+
+/* FEATURES */
+.section{padding:6rem 2rem;max-width:1100px;margin:0 auto}
+.section-label{font-size:11px;color:var(--cyan);text-transform:uppercase;letter-spacing:2px;margin-bottom:1rem}
+.section h2{font-size:clamp(1.5rem,3vw,2.5rem);margin-bottom:1rem;line-height:1.3}
+.section-sub{font-size:16px;color:var(--muted);max-width:600px;font-family:sans-serif;font-weight:400;line-height:1.7;margin-bottom:3rem}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.feature-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2rem;transition:border-color 0.2s}
+.feature-card:hover{border-color:var(--border2)}
+.feature-icon{font-size:28px;margin-bottom:1rem}
+.feature-card h3{font-size:16px;margin-bottom:8px;color:var(--text)}
+.feature-card p{font-size:13px;color:var(--muted);font-family:sans-serif;line-height:1.6}
+.feature-tag{display:inline-block;font-size:10px;color:var(--green);background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.2);border-radius:3px;padding:2px 8px;margin-top:12px;letter-spacing:1px}
+
+/* TERMINAL DEMO */
+.demo-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:6rem 2rem}
+.demo-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center}
+.demo-terminal{background:#0a0a0a;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.terminal-bar{background:#1a1a1a;padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+.terminal-dot{width:10px;height:10px;border-radius:50%}
+.t-red{background:#ff5f57}.t-yellow{background:#febc2e}.t-green{background:#28c840}
+.terminal-title{font-size:11px;color:var(--dim);margin-left:8px}
+.terminal-body{padding:1.5rem;font-size:12px;line-height:2;color:var(--green)}
+.t-dim{color:var(--dim)}
+.t-cyan{color:var(--cyan)}
+.t-yellow{color:var(--yellow)}
+.t-white{color:var(--text)}
+
+/* PRICING */
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:3rem}
+.pricing-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2rem;position:relative}
+.pricing-card.featured{border-color:var(--cyan);background:rgba(0,212,255,0.03)}
+.pricing-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--cyan);color:#000;font-size:10px;font-weight:700;padding:4px 16px;border-radius:20px;letter-spacing:1px}
+.pricing-plan{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.pricing-price{font-size:36px;font-weight:700;color:var(--text);margin-bottom:4px}
+.pricing-price span{font-size:14px;color:var(--muted);font-weight:400}
+.pricing-desc{font-size:13px;color:var(--muted);font-family:sans-serif;margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:1px solid var(--border)}
+.pricing-features{list-style:none;margin-bottom:2rem}
+.pricing-features li{font-size:13px;color:var(--muted);font-family:sans-serif;padding:6px 0;display:flex;align-items:flex-start;gap:10px}
+.pricing-features li::before{content:'✓';color:var(--green);flex-shrink:0;font-weight:700}
+.pricing-features li.dim::before{content:'–';color:var(--dim)}
+.pricing-features li.dim{color:var(--dim)}
+.btn-outline{display:block;text-align:center;border:1px solid var(--border2);border-radius:6px;padding:12px;font-family:'Courier New',monospace;font-size:12px;color:var(--muted);cursor:pointer;background:none;width:100%;transition:all 0.2s;text-decoration:none}
+.btn-outline:hover{border-color:var(--cyan);color:var(--cyan)}
+.btn-filled{display:block;text-align:center;background:var(--cyan);border:none;border-radius:6px;padding:12px;font-family:'Courier New',monospace;font-size:12px;color:#000;cursor:pointer;width:100%;font-weight:700;transition:all 0.2s;text-decoration:none}
+.btn-filled:hover{background:#00b8d9}
+
+/* EMAIL SECTION */
+.email-section{background:linear-gradient(135deg,rgba(0,212,255,0.05) 0%,transparent 60%);border-top:1px solid var(--border);padding:6rem 2rem;text-align:center}
+.email-inner{max-width:500px;margin:0 auto}
+.email-inner h2{font-size:clamp(1.5rem,3vw,2rem);margin-bottom:1rem}
+.email-inner p{font-size:15px;color:var(--muted);font-family:sans-serif;margin-bottom:2rem;line-height:1.7}
+.email-form{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.email-form input{background:var(--bg2);border:1px solid var(--border2);border-radius:6px;padding:14px 20px;font-family:'Courier New',monospace;font-size:14px;color:var(--text);outline:none;flex:1;min-width:200px}
+.email-form input:focus{border-color:var(--cyan)}
+.signup-msg{margin-top:1rem;font-size:13px;display:none}
+.signup-msg.success{color:var(--green);display:block}
+.signup-msg.error{color:var(--red);display:block}
+
+/* FOOTER */
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:3rem 2rem;text-align:center}
+.footer-logo{font-size:20px;font-weight:700;color:var(--cyan);letter-spacing:2px;margin-bottom:1rem}
+.footer-links{display:flex;gap:24px;justify-content:center;margin-bottom:2rem;flex-wrap:wrap}
+.footer-links a{color:var(--dim);text-decoration:none;font-size:12px;letter-spacing:1px}
+.footer-links a:hover{color:var(--muted)}
+.footer-note{font-size:11px;color:var(--dim)}
+
+/* MOBILE */
+@media(max-width:768px){
+  .nav-links{display:none}
+  .demo-inner{grid-template-columns:1fr}
+  .hero-signup{flex-direction:column;align-items:center}
+  .hero-signup input{width:100%;max-width:340px}
+  .hero-stats{gap:2rem}
+}
+
+/* SUCCESS STATE */
+.form-success{display:none;text-align:center;padding:1rem}
+.form-success.show{display:block}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">TAOSCOUT</div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#pricing">Pricing</a>
+    <a href="https://app.taoscout.com">Dashboard</a>
+    <a href="https://app.taoscout.com/login" style="color:#888;text-decoration:none;font-size:12px;letter-spacing:1px">Login</a>
+    <a href="#signup" class="nav-cta">Get Early Access</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">
+    <span class="live-dot"></span>
+    Live on Finney Mainnet
+  </div>
+  <h1>Find Bittensor Opportunities<br><span>Before Everyone Else</span></h1>
+  <p>Daily subnet intelligence, emission alerts, GPU-aware rankings, and opportunity scans — built for miners, validators, and TAO operators who don't have time to check 6 different dashboards.</p>
+
+  <div class="hero-signup" id="hero-form">
+    <input type="email" id="hero-email" placeholder="your@email.com" />
+    <button class="btn-primary" onclick="subscribe('hero-email','hero-msg')">Get Early Access →</button>
+  </div>
+  <div class="signup-msg" id="hero-msg"></div>
+  <p class="hero-note">48-hour free Operator beta. Manual approval. Access instructions sent by email.</p>
+
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <div class="hero-stat-num">129</div>
+      <div class="hero-stat-label">Subnets Tracked</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">30m</div>
+      <div class="hero-stat-label">Refresh Interval</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">4</div>
+      <div class="hero-stat-label">GPU Classes Scored</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-num">Live</div>
+      <div class="hero-stat-label">Chain Data</div>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker">
+  <div class="ticker-inner">
+    <div class="ticker-item">SN4 Targon <span class="up">↑ $8.59/tempo</span></div>
+    <div class="ticker-item">TAO/USD <span>$264.06</span></div>
+    <div class="ticker-item">SN44 Score <span class="up">↑ 37.4x ratio</span></div>
+    <div class="ticker-item">SN51 lium.io <span>GPU Compute</span></div>
+    <div class="ticker-item">SN95 nion <span class="up">↑ $3.03/tempo</span></div>
+    <div class="ticker-item">SN8 Vanta <span class="down">↓ -34% emission</span></div>
+    <div class="ticker-item">129 Subnets <span>Analyzed</span></div>
+    <div class="ticker-item">SN36 automata <span>10% fill — open slots</span></div>
+    <!-- duplicate for seamless scroll -->
+    <div class="ticker-item">SN4 Targon <span class="up">↑ $8.59/tempo</span></div>
+    <div class="ticker-item">TAO/USD <span>$264.06</span></div>
+    <div class="ticker-item">SN44 Score <span class="up">↑ 37.4x ratio</span></div>
+    <div class="ticker-item">SN51 lium.io <span>GPU Compute</span></div>
+    <div class="ticker-item">SN95 nion <span class="up">↑ $3.03/tempo</span></div>
+    <div class="ticker-item">SN8 Vanta <span class="down">↓ -34% emission</span></div>
+    <div class="ticker-item">129 Subnets <span>Analyzed</span></div>
+    <div class="ticker-item">SN36 automata <span>10% fill — open slots</span></div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-label">What TaoScout Does</div>
+  <h2>Everything a Bittensor Operator Needs.<br>In One Terminal.</h2>
+  <p class="section-sub">Stop checking TaoStats, Discord, GitHub, and validator dashboards separately. TaoScout aggregates actionable intelligence and tells you what matters right now.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Opportunity Scanner</h3>
+      <p>Scans all 129 subnets for high emission, low burn, open registration slots, and favorable entry conditions. Ranked and ready.</p>
+      <span class="feature-tag">LIVE DATA</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎯</div>
+      <h3>GPU-Aware Rankings</h3>
+      <p>Tell TaoScout your hardware — 3090, 4090, 3060 — and it scores every subnet for fit, expected earnings, and competition level.</p>
+      <span class="feature-tag">24/32/48/96GB</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Emission Tracking</h3>
+      <p>Track emission/burn ratios, 24h movers, and historical trends. Know which subnets are growing and which are collapsing before everyone else.</p>
+      <span class="feature-tag">30MIN REFRESH</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔫</div>
+      <h3>Sniper Mode</h3>
+      <p>Find subnets with open registration slots, low burn cost, and strong emission. Get entry signals before slots fill up.</p>
+      <span class="feature-tag">ENTRY SIGNALS</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚠️</div>
+      <h3>Risk Engine</h3>
+      <p>Weighted risk scoring across 6 dimensions — zero emission, falling movers, high burn, overcrowding, volatility, and low reward.</p>
+      <span class="feature-tag">WEIGHTED SCORING</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📡</div>
+      <h3>Participation Trends</h3>
+      <p>Track neuron count changes, new registrations, deregistrations, and concentration risk across all subnets over time.</p>
+      <span class="feature-tag">HISTORICAL DB</span>
+    </div>
+  </div>
+</section>
+
+<!-- TERMINAL DEMO -->
+<div class="demo-section">
+  <div class="demo-inner">
+    <div>
+      <div class="section-label">Live Intelligence</div>
+      <h2 style="font-size:clamp(1.4rem,2.5vw,2rem);margin-bottom:1rem">Bloomberg Terminal.<br>For Bittensor.</h2>
+      <p style="font-size:14px;color:var(--muted);font-family:sans-serif;line-height:1.8;margin-bottom:1.5rem">Every query returns deterministic data from live chain snapshots. No AI hallucinations. No vague summaries. Exact numbers, exact rankings, exact fields used.</p>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">
+        <li style="font-size:13px;color:var(--muted);font-family:sans-serif;display:flex;gap:10px"><span style="color:var(--green)">✓</span> Ask "top 10 emission" → get exact ranked table</li>
+        <li style="font-size:13px;color:var(--muted);font-family:sans-serif;display:flex;gap:10px"><span style="color:var(--green)">✓</span> Ask "best subnets for 3090" → GPU-scored rankings</li>
+        <li style="font-size:13px;color:var(--muted);font-family:sans-serif;display:flex;gap:10px"><span style="color:var(--green)">✓</span> Ask "movers 24h" → live emission delta table</li>
+        <li style="font-size:13px;color:var(--muted);font-family:sans-serif;display:flex;gap:10px"><span style="color:var(--green)">✓</span> Ask "risk scan" → weighted risk scores for all subnets</li>
+      </ul>
+    </div>
+    <div class="demo-terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot t-red"></div>
+        <div class="terminal-dot t-yellow"></div>
+        <div class="terminal-dot t-green"></div>
+        <span class="terminal-title">TaoScout — top 10 emission</span>
+      </div>
+      <div class="terminal-body">
+<span class="t-dim">────────────────────────────────────────────</span>
+<span class="t-cyan">  TOP 10 BY EMISSION</span>
+<span class="t-dim">  Confidence: HIGH | Python sort, no LLM math</span>
+<span class="t-dim">────────────────────────────────────────────</span>
+<span class="t-dim">  #  Subnet   Name         Emit(τ)    USD</span>
+<span class="t-dim">  ─  ──────   ────         ───────    ───</span>
+  1  SN4      Targon       0.02975  <span class="t-cyan">$7.36</span>
+  2  SN51     lium.io      0.02730  <span class="t-cyan">$6.75</span>
+  3  SN97     distil       0.02063  <span class="t-cyan">$5.10</span>
+  4  SN44     Score        0.01868  <span class="t-cyan">$4.62</span>
+  5  SN15     ORO          0.01586  <span class="t-cyan">$3.92</span>
+  6  SN95     nion         0.01226  <span class="t-cyan">$3.03</span>
+  7  SN5      Hone         0.00963  <span class="t-cyan">$2.38</span>
+  8  SN19     blockmachine 0.00789  <span class="t-cyan">$1.95</span>
+  9  SN24     Quasar       0.00769  <span class="t-cyan">$1.90</span>
+ 10  SN17     404-GEN      0.00762  <span class="t-cyan">$1.88</span>
+<span class="t-dim">  Block: 8113358 | TAO: $264.06</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="section-label">Pricing</div>
+  <h2>Simple Pricing for Operators</h2>
+  <p class="section-sub">Start free during beta. Upgrade when you need daily alerts and real-time access.</p>
+
+  <div class="pricing-grid">
+    <div class="pricing-card">
+      <div class="pricing-plan">Free</div>
+      <div class="pricing-price">$0 <span>/ month</span></div>
+      <div class="pricing-desc">Beta access. Everything you need to get started.</div>
+      <ul class="pricing-features">
+        <li>Weekly intelligence report</li>
+        <li>Top 5 opportunities</li>
+        <li>Basic GPU rankings</li>
+        <li>Dashboard access</li>
+        <li class="dim">Daily email alerts</li>
+        <li class="dim">Real-time notifications</li>
+        <li class="dim">Discord integration</li>
+      </ul>
+      <a href="#signup" class="btn-outline">Get Free Access</a>
+    </div>
+
+    <div class="pricing-card featured">
+      <div class="pricing-badge">MOST POPULAR</div>
+      <div class="pricing-plan">Miner</div>
+      <div class="pricing-price">$9 <span>/ month</span></div>
+      <div class="pricing-desc">For active miners who need daily intelligence.</div>
+      <ul class="pricing-features">
+        <li>Everything in Free</li>
+        <li>Daily email report</li>
+        <li>Opportunity alerts</li>
+        <li>Registration alerts</li>
+        <li>GPU-aware rankings (all classes)</li>
+        <li>Sniper mode signals</li>
+        <li class="dim">Discord integration</li>
+      </ul>
+      <a href="#signup" class="btn-filled">Coming Soon</a>
+    </div>
+
+    <div class="pricing-card">
+      <div class="pricing-plan">Operator</div>
+      <div class="pricing-price">$29 <span>/ month</span></div>
+      <div class="pricing-desc">For multi-rig operators and validators.</div>
+      <ul class="pricing-features">
+        <li>Everything in Miner</li>
+        <li>Discord bot alerts</li>
+        <li>Watchlists</li>
+        <li>Real-time notifications</li>
+        <li>Historical trend access</li>
+        <li>Participation trends</li>
+        <li>Priority support</li>
+      </ul>
+      <a href="#signup" class="btn-outline">Coming Soon</a>
+    </div>
+  </div>
+  <div style="margin-top:3rem;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:2rem;max-width:600px">
+    <div style="font-size:11px;color:var(--cyan);text-transform:uppercase;letter-spacing:2px;margin-bottom:1rem">Beta Access Process</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <span style="color:var(--cyan);font-size:18px;font-weight:700;flex-shrink:0">1</span>
+        <div>
+          <div style="font-size:14px;color:var(--text);margin-bottom:2px">Join with email</div>
+          <div style="font-size:12px;color:var(--muted);font-family:sans-serif">Enter your email below or in the hero section above.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <span style="color:var(--cyan);font-size:18px;font-weight:700;flex-shrink:0">2</span>
+        <div>
+          <div style="font-size:14px;color:var(--text);margin-bottom:2px">Manual approval</div>
+          <div style="font-size:12px;color:var(--muted);font-family:sans-serif">We review and approve beta users within 24 hours.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <span style="color:var(--cyan);font-size:18px;font-weight:700;flex-shrink:0">3</span>
+        <div>
+          <div style="font-size:14px;color:var(--text);margin-bottom:2px">Receive access instructions</div>
+          <div style="font-size:12px;color:var(--muted);font-family:sans-serif">We email you an API key and dashboard link.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <span style="color:var(--cyan);font-size:18px;font-weight:700;flex-shrink:0">4</span>
+        <div>
+          <div style="font-size:14px;color:var(--text);margin-bottom:2px">Paid plans open after beta</div>
+          <div style="font-size:12px;color:var(--muted);font-family:sans-serif">$10/mo Miner and $29/mo Operator plans launch after the 48-hour beta window.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+</section>
+
+<!-- EMAIL CAPTURE -->
+<section class="email-section" id="signup">
+  <div class="email-inner">
+    <div class="section-label" style="text-align:center">Early Access</div>
+    <h2>Get Notified When We Launch</h2>
+    <p>Join the 48-hour free Operator beta. We approve access manually and email you instructions within 24 hours.</p>
+    <div class="email-form">
+      <input type="email" id="footer-email" placeholder="your@email.com" />
+      <button class="btn-primary" onclick="subscribe('footer-email','footer-msg')">Join →</button>
+    </div>
+    <div class="signup-msg" id="footer-msg"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-logo">TAOSCOUT</div>
+  <div class="footer-links">
+    <a href="https://app.taoscout.com">Dashboard</a>
+    <a href="https://github.com/McDEE1311/taoscout">GitHub</a>
+    <a href="mailto:tao.forge.ai@gmail.com">Contact</a>
+    <a href="#pricing">Pricing</a>
+  </div>
+  <p class="footer-note">© 2026 TaoScout. Built on Finney mainnet. Not financial advice.<br>
+  Bittensor operator intelligence running on a home 3090 in Tennessee.</p>
+</footer>
+
+<script>
+const API = '';
+
+async function subscribe(inputId, msgId) {
+  const email = document.getElementById(inputId).value.trim();
+  const msg = document.getElementById(msgId);
+
+  if (!email || !email.includes('@')) {
+    msg.textContent = 'Please enter a valid email address.';
+    msg.className = 'signup-msg error';
+    return;
+  }
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Joining...';
+
+  try {
+    const r = await fetch(API + '/subscribe', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email})
+    });
+    const d = await r.json();
+    if (r.ok) {
+      msg.textContent = "✓ You're on the beta list. Free Operator access is being approved manually. We'll email your access instructions within 24 hours.";
+      msg.className = 'signup-msg success';
+      document.getElementById(inputId).value = '';
+    } else {
+      msg.textContent = d.detail || 'Something went wrong. Try again.';
+      msg.className = 'signup-msg error';
+    }
+  } catch(e) {
+    msg.textContent = 'Could not connect. Email us at tao.forge.ai@gmail.com';
+    msg.className = 'signup-msg error';
+  }
+  btn.disabled = false;
+  btn.textContent = inputId === 'hero-email' ? 'Get Early Access →' : 'Join →';
+}
+
+document.querySelectorAll('input[type=email]').forEach(input => {
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const id = input.id;
+      const msgId = id === 'hero-email' ? 'hero-msg' : 'footer-msg';
+      subscribe(id, msgId);
+    }
+  });
+});
+</script>
+</body>
+</html>
