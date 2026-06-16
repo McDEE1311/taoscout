@@ -205,6 +205,21 @@ def load_enrichment():
     if cached and is_fresh(ts, mins=30): return cached
     return fetch_enrichment_data()
 
+def merge_taostats_enrichment(subnets):
+    """Merge TaoStats enrichment data into subnet list."""
+    ef = Path(__file__).parent / "data" / "taostats_enrichment.json"
+    if not ef.exists():
+        return subnets
+    try:
+        enrichment = json.loads(ef.read_text()).get("subnets", {})
+        for s in subnets:
+            nid = str(s["netuid"])
+            if nid in enrichment:
+                s.update(enrichment[nid])
+    except Exception as e:
+        print(f"[ENRICHMENT MERGE] {e}")
+    return subnets
+
 # ── GitHub subnet search ──────────────────────────────────────────────────────
 def github_search_subnet(netuid, subnet_name=""):
     # Check curated registry first
@@ -384,7 +399,7 @@ def build_context(data, include_deltas=True, enrichment=None):
         enrichment = load_enrichment()
 
     tao_price = enrichment.get("tao_price_usd", 0.0)
-    subnets   = data.get("subnets", [])
+    subnets   = merge_taostats_enrichment(data.get("subnets", []))
     block     = data.get("block", "?")
 
     if HAS_ANALYTICS:
@@ -611,7 +626,7 @@ def api_brief(force=False):
         import formatter
         import db as DB
         import risk_engine as RE
-        subnets    = d.get("subnets", [])
+        subnets    = merge_taostats_enrichment(d.get("subnets", []))
         tao_usd    = enrich.get("tao_price_usd", 0)
         movers     = DB.get_movers(hours=20, top_n=10) if DB.get_snapshot_count() >= 2 else []
         snap_count = DB.get_snapshot_count()
@@ -661,7 +676,7 @@ def api_scan(force=False):
     enrich   = load_enrichment()
     ctx      = build_context(d, enrichment=enrich)
     tao_price = enrich.get("tao_price_usd", 0.0)
-    subnets  = d.get("subnets", [])
+    subnets  = merge_taostats_enrichment(d.get("subnets", []))
 
     if HAS_ANALYTICS:
         movers    = DB.get_movers(hours=24) if DB.get_snapshot_count() >= 2 else []
@@ -698,7 +713,7 @@ def api_rankings(gpu_class="24gb", force=False):
         return {"error": "Analytics engine not loaded"}
     enrich    = load_enrichment()
     tao_price = enrich.get("tao_price_usd", 0.0)
-    subnets   = d.get("subnets", [])
+    subnets   = merge_taostats_enrichment(d.get("subnets", []))
     movers    = DB.get_movers(hours=24) if DB.get_snapshot_count() >= 2 else []
 
     from analytics import GPU_CLASSES
@@ -742,7 +757,7 @@ def api_subnet(netuid, include_github=True):
     if not d: return {"error": f"No chain data: {src}"}
     enrich    = load_enrichment()
     tao_price = enrich.get("tao_price_usd", 0.0)
-    subnets   = d.get("subnets", [])
+    subnets   = merge_taostats_enrichment(d.get("subnets", []))
 
     subnet = next((s for s in subnets if s.get("netuid") == netuid), None)
     if not subnet:

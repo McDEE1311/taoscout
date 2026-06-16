@@ -92,11 +92,36 @@ def enrich_chain_data():
 
         enriched += 1
 
-    chain["data"]["subnets"]         = subnets
-    chain["data"]["taostats_enriched_at"] = datetime.now(timezone.utc).isoformat()
-    chain_file.write_text(json.dumps(chain))
+    # Save enrichment separately so chain refresh doesn't overwrite it
+    enrichment = {
+        "enriched_at": datetime.now(timezone.utc).isoformat(),
+        "subnets": {}
+    }
+    for s in subnets:
+        nid = str(s["netuid"])
+        enrichment["subnets"][nid] = {
+            "validators":           s.get("validators", 0),
+            "active_validators":    s.get("active_validators", 0),
+            "active_miners":        s.get("active_miners", 0),
+            "active_keys":          s.get("active_keys", 0),
+            "max_validators":       s.get("max_validators", 64),
+            "emission_projected":   s.get("emission_projected", 0),
+            "burn_tao_taostats":    s.get("burn_tao_taostats", 0),
+            "neuron_reg_cost_tao":  s.get("neuron_reg_cost_tao", 0),
+            "net_flow_1d":          s.get("net_flow_1d", 0),
+            "net_flow_7d":          s.get("net_flow_7d", 0),
+            "net_flow_30d":         s.get("net_flow_30d", 0),
+            "blocks_until_epoch":   s.get("blocks_until_epoch", 0),
+            "registration_allowed": s.get("registration_allowed", True),
+            "alpha_high":           s.get("alpha_high", 0),
+            "alpha_low":            s.get("alpha_low", 0),
+            "regs_this_interval":   s.get("regs_this_interval", 0),
+        }
 
-    print(f"Enriched {enriched}/129 subnets with TaoStats validator + flow data")
+    enrichment_file = BASE_DIR / "data" / "taostats_enrichment.json"
+    enrichment_file.write_text(json.dumps(enrichment))
+
+    print(f"Enriched {enriched}/129 subnets → saved to data/enrichment.json")
     return True
 
 if __name__ == "__main__":
