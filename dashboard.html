@@ -89,6 +89,9 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
     <button class="btn" onclick="runAction('scan')"><span class="btn-icon">&#8857;</span>Opportunity Scan</button>
     <button class="btn" onclick="runAction('refresh')"><span class="btn-icon">&#8634;</span>Refresh Chain</button>
     <button class="btn" onclick="toggleSniper()"><span class="btn-icon">&#9673;</span>Sniper Mode</button>
+    <button class="btn" onclick="runIntel('stake-flow')"><span class="btn-icon">&#8652;</span>Stake Flow</button>
+    <button class="btn" onclick="runIntel('death-risk')"><span class="btn-icon">&#9760;</span>Death Risk</button>
+    <button class="btn" onclick="runIntel('reg-opportunities')"><span class="btn-icon">&#43;</span>Reg Opps</button>
     <button class="btn" onclick="runAction('status')"><span class="btn-icon">&#10792;</span>System Status</button>
   </div>
   <div id="sniper-panel" style="display:none;background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:16px;margin:0 0 12px 0">
@@ -263,6 +266,76 @@ async function runAction(action){
 }
 
 let sniperGpu='24gb', sniperRisk='medium';
+
+async function runIntel(endpoint) {
+  const titles = {
+    'stake-flow': 'STAKE FLOW — Leading Indicators',
+    'death-risk': 'SUBNET DEATH RISK',
+    'reg-opportunities': 'REGISTRATION OPPORTUNITIES'
+  };
+  setLoading(titles[endpoint] || endpoint);
+  try {
+    const r = await fetch(API+'/'+endpoint, {headers:H});
+    const d = await r.json();
+    if (!d || d.detail) { setError('Error: '+(d&&d.detail||'no data')); return; }
+    let html = '<div class="result-header"><div class="result-title">'+titles[endpoint]+'</div><span class="confidence-badge badge-high">LIVE</span></div>';
+
+    if (endpoint === 'stake-flow') {
+      html += '<div class="terminal-table"><pre>';
+      html += 'TOP INFLOWS (Bullish — stake moving IN)\n';
+      html += '  #  Subnet    Name             Flow(TAO/day)   Signal\n';
+      html += '  ─  ────────  ────────────     ─────────────   ──────\n';
+      (d.top_inflows||[]).slice(0,8).forEach((r,i) => {
+        const name = escHtml((r.name||'').padEnd(15).slice(0,15));
+        const flow = ('+'+r.net_flow_1d.toFixed(1)).padStart(13);
+        html += '  '+(i+1)+'  SN'+String(r.netuid).padEnd(6)+'  '+name+'  '+flow+'   '+escHtml(r.signal)+'\n';
+      });
+      html += '\nTOP OUTFLOWS (Bearish — stake moving OUT)\n';
+      html += '  #  Subnet    Name             Flow(TAO/day)   Signal\n';
+      html += '  ─  ────────  ────────────     ─────────────   ──────\n';
+      (d.top_outflows||[]).slice(-8).reverse().forEach((r,i) => {
+        const name = escHtml((r.name||'').padEnd(15).slice(0,15));
+        const flow = (r.net_flow_1d.toFixed(1)).padStart(13);
+        html += '  '+(i+1)+'  SN'+String(r.netuid).padEnd(6)+'  '+name+'  '+flow+'   '+escHtml(r.signal)+'\n';
+      });
+      html += '\nNote: Stake flow moves BEFORE emissions change. Use as leading indicator.\n';
+      html += '</pre></div>';
+    }
+
+    else if (endpoint === 'death-risk') {
+      html += '<div class="terminal-table"><pre>';
+      html += 'CRITICAL RISK SUBNETS\n';
+      html += '  #  Subnet    Name             Risk   Level     Flags\n';
+      html += '  ─  ────────  ────────────     ────   ─────     ─────\n';
+      (d.critical_risk||[]).slice(0,8).forEach((r,i) => {
+        const name = escHtml((r.name||'').padEnd(15).slice(0,15));
+        const flags = (r.flags||[]).join(', ').slice(0,40);
+        html += '  '+(i+1)+'  SN'+String(r.netuid).padEnd(6)+'  '+name+'  '+String(r.death_risk).padStart(4)+'/100  '+r.risk_level.padEnd(8)+'  '+escHtml(flags)+'\n';
+      });
+      html += '\nSAFEST SUBNETS (Low Risk + Active Emission)\n';
+      (d.safest_subnets||[]).slice(0,5).forEach((r,i) => {
+        html += '  '+(i+1)+'  SN'+r.netuid+' '+escHtml(r.name)+' — risk='+r.death_risk+'/100 emit='+r.emission_tao.toFixed(5)+'τ\n';
+      });
+      html += '</pre></div>';
+    }
+
+    else if (endpoint === 'reg-opportunities') {
+      html += '<div class="terminal-table"><pre>';
+      html += 'REGISTRATION OPPORTUNITIES\n';
+      html += '  #  Subnet    Name             Score  Signal    Slots  Emit(τ)      USD     Burn\n';
+      html += '  ─  ────────  ────────────     ─────  ──────    ─────  ───────      ───     ────\n';
+      (d.opportunities||[]).slice(0,10).forEach((r,i) => {
+        const name = escHtml((r.name||'').padEnd(15).slice(0,15));
+        html += '  '+(i+1)+'  SN'+String(r.netuid).padEnd(6)+'  '+name+'  '+String(r.reg_score).padStart(5)+'  '+r.signal.padEnd(8)+'  '+String(r.open_slots).padStart(5)+'  '+r.emission_tao.toFixed(5)+'  $'+((r.emission_usd||0).toFixed(3)).padStart(7)+'  '+r.burn_tao.toFixed(4)+'τ\n';
+      });
+      html += '\nScore = open_slots(25)+emission(25)+stake_flow(25)+validators(15)+burn(10)\n';
+      html += '</pre></div>';
+    }
+
+    html += '<div class="disclaimer">TaoScout intelligence engine. Not financial advice.</div>';
+    document.getElementById('result').innerHTML = html;
+  } catch(e) { setError('Intel fetch failed: '+e.message); }
+}
 
 function toggleSniper(){
   const panel=document.getElementById('sniper-panel');
