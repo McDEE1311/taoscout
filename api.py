@@ -638,3 +638,39 @@ async def landing():
     if landing_file.exists():
         return HTMLResponse(content=landing_file.read_text(), status_code=200)
     raise HTTPException(status_code=404, detail="Landing page not found")
+
+# ── Intelligence Engine Routes ────────────────────────────────────────────────
+from intelligence_engine import build_stake_flow, build_death_risk, build_registration_opportunities
+
+@app.get("/stake-flow")
+async def stake_flow(top_n: int = 15, key: str = Depends(verify_key)):
+    """Stake flow rankings — leading indicator before emission changes."""
+    from scout import get_chain_data, load_enrichment, merge_taostats_enrichment
+    d, _ = get_chain_data()
+    if not d: raise HTTPException(status_code=503, detail="No chain data")
+    enrich = load_enrichment()
+    tao_usd = enrich.get("tao_price_usd", 0.0)
+    subnets = merge_taostats_enrichment(d.get("subnets", []))
+    return build_stake_flow(subnets, tao_usd, top_n)
+
+@app.get("/death-risk")
+async def death_risk(top_n: int = 15, key: str = Depends(verify_key)):
+    """Subnet death risk scores — find subnets about to collapse."""
+    from scout import get_chain_data, load_enrichment, merge_taostats_enrichment
+    d, _ = get_chain_data()
+    if not d: raise HTTPException(status_code=503, detail="No chain data")
+    enrich = load_enrichment()
+    tao_usd = enrich.get("tao_price_usd", 0.0)
+    subnets = merge_taostats_enrichment(d.get("subnets", []))
+    return build_death_risk(subnets, tao_usd, top_n)
+
+@app.get("/reg-opportunities")
+async def reg_opportunities(top_n: int = 10, key: str = Depends(verify_key)):
+    """Registration opportunity predictor — where to register next."""
+    from scout import get_chain_data, load_enrichment, merge_taostats_enrichment
+    d, _ = get_chain_data()
+    if not d: raise HTTPException(status_code=503, detail="No chain data")
+    enrich = load_enrichment()
+    tao_usd = enrich.get("tao_price_usd", 0.0)
+    subnets = merge_taostats_enrichment(d.get("subnets", []))
+    return build_registration_opportunities(subnets, tao_usd, top_n)
