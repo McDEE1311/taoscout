@@ -634,7 +634,7 @@ def api_brief(force=False):
             "finding":         f"Operator brief — Block {d.get('block','?')} | TAO ${tao_usd:.2f} | {snap_count} snapshots",
             "basis":           "top_emission + gpu_24gb + movers + my_subnets + risk — all deterministic Python",
             "confidence":      "HIGH",
-            "gaps":            "Movers require 4+ snapshots. Validator trends not yet implemented.",
+            "gaps":            "Movers require 4+ snapshots to calculate delta.",
             "formatted_table": combined,
             "router_intent":   "brief",
             "fields_used":     ["emission", "burn_tao", "neurons", "max_neurons", "em_pct_change"],
