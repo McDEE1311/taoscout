@@ -7,3 +7,9 @@ __pycache__/
 *.bak
 *.bak2
 *.bak3
+subscribers.csv
+scratch_backup/
+archive/
+landing_beta.py
+patch_subnet_meta.py
+install_auth.sh
