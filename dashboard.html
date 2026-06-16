@@ -88,8 +88,35 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
     <button class="btn" onclick="runAction('brief')"><span class="btn-icon">&#9636;</span>Daily Brief</button>
     <button class="btn" onclick="runAction('scan')"><span class="btn-icon">&#8857;</span>Opportunity Scan</button>
     <button class="btn" onclick="runAction('refresh')"><span class="btn-icon">&#8634;</span>Refresh Chain</button>
-    <button class="btn" onclick="runAction('sniper')"><span class="btn-icon">&#9673;</span>Sniper Mode</button>
+    <button class="btn" onclick="toggleSniper()"><span class="btn-icon">&#9673;</span>Sniper Mode</button>
     <button class="btn" onclick="runAction('status')"><span class="btn-icon">&#10792;</span>System Status</button>
+  </div>
+  <div id="sniper-panel" style="display:none;background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:16px;margin:0 0 12px 0">
+    <div style="font-size:11px;color:#00d4ff;letter-spacing:1px;margin-bottom:12px">SNIPER MODE — SELECT PARAMETERS</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <div style="font-size:10px;color:#555;margin-bottom:6px">GPU CLASS</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap" id="gpu-btns">
+          <button onclick="setGpu('12gb')" class="sniper-opt" data-val="12gb">12GB<br><span style="font-size:9px;color:#555">3060</span></button>
+          <button onclick="setGpu('24gb')" class="sniper-opt active-opt" data-val="24gb">24GB<br><span style="font-size:9px;color:#555">3090</span></button>
+          <button onclick="setGpu('32gb')" class="sniper-opt" data-val="32gb">32GB<br><span style="font-size:9px;color:#555">5090</span></button>
+          <button onclick="setGpu('48gb')" class="sniper-opt" data-val="48gb">48GB<br><span style="font-size:9px;color:#555">A6000</span></button>
+          <button onclick="setGpu('96gb')" class="sniper-opt" data-val="96gb">96GB<br><span style="font-size:9px;color:#555">A100</span></button>
+          <button onclick="setGpu('141gb')" class="sniper-opt" data-val="141gb">141GB<br><span style="font-size:9px;color:#555">H200</span></button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:#555;margin-bottom:6px">RISK</div>
+        <div style="display:flex;gap:4px" id="risk-btns">
+          <button onclick="setRisk('low')" class="sniper-opt" data-val="low">Low</button>
+          <button onclick="setRisk('medium')" class="sniper-opt active-opt" data-val="medium">Med</button>
+          <button onclick="setRisk('high')" class="sniper-opt" data-val="high">High</button>
+        </div>
+      </div>
+      <div>
+        <button onclick="runSniper()" style="background:#00d4ff;color:#000;border:none;padding:10px 24px;border-radius:6px;font-family:'Courier New',monospace;font-size:12px;font-weight:700;cursor:pointer">SCAN →</button>
+      </div>
+    </div>
   </div>
   <div class="ask-row">
     <input class="ask-input" id="question" type="text" placeholder="Ask: top 10 emission | best subnets for 3090 | movers 24h | risk scan | sn4 detail" />
@@ -225,6 +252,7 @@ async function runAction(action){
     return;
   }
 
+
   const titles={brief:'Daily Operator Brief',scan:'Opportunity Scan'};
   setLoading(titles[action]||action);
   try{
@@ -232,6 +260,68 @@ async function runAction(action){
     const d=await r.json();
     document.getElementById('result').innerHTML=renderResult(d,titles[action]);
   }catch(e){setError('Could not reach TaoScout API.');}
+}
+
+let sniperGpu='24gb', sniperRisk='medium';
+
+function toggleSniper(){
+  const panel=document.getElementById('sniper-panel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+  if(panel.style.display==='block')
+    document.querySelectorAll('.btn')[3].classList.add('active');
+}
+
+function setGpu(val){
+  sniperGpu=val;
+  document.querySelectorAll('#gpu-btns .sniper-opt').forEach(b=>{
+    b.classList.toggle('active-opt', b.dataset.val===val);
+  });
+}
+
+function setRisk(val){
+  sniperRisk=val;
+  document.querySelectorAll('#risk-btns .sniper-opt').forEach(b=>{
+    b.classList.toggle('active-opt', b.dataset.val===val);
+  });
+}
+
+async function runSniper(){
+  document.getElementById('sniper-panel').style.display='none';
+  setLoading('Sniper Mode — '+sniperGpu+' / '+sniperRisk+' risk');
+  try{
+    const r=await fetch(API+'/sniper?gpu_class='+sniperGpu+'&risk='+sniperRisk+'&budget_tao=1.0',{headers:H});
+    const d=await r.json();
+    if(!d||d.detail){setError('Sniper error: '+(d&&d.detail||'no data'));return;}
+    const tp=d.top_pick||{};
+    const results=d.results||[];
+    let html='<div class="result-header"><div class="result-title">SNIPER MODE — '+sniperGpu.toUpperCase()+' / '+sniperRisk.toUpperCase()+' RISK</div><span class="confidence-badge badge-high">'+results.length+' signal'+(results.length!==1?'s':'')+'</span></div>';
+    if(tp.netuid){
+      html+='<div style="background:#0a2a0a;border:1px solid #1a4a1a;border-radius:6px;padding:14px;margin-bottom:12px">';
+      html+='<div style="color:#00ff88;font-size:10px;letter-spacing:1.5px;margin-bottom:6px">⚡ TOP PICK</div>';
+      html+='<div style="font-size:18px;font-weight:700">SN'+tp.netuid+' '+escHtml(tp.name||'')+'</div>';
+      html+='<div style="color:#00d4ff;margin-top:4px;font-size:14px">'+escHtml(tp.signal||'')+'</div>';
+      if(tp.entry_cost_usd!=null) html+='<div style="color:#888;font-size:12px;margin-top:6px">Entry: $'+Number(tp.entry_cost_usd).toFixed(2)+' &nbsp;|&nbsp; Expected: $'+Number(tp.expected_per_tempo_usd||0).toFixed(3)+'/tempo</div>';
+      html+='</div>';
+    }
+    if(results.length>0){
+      html+='<div class="terminal-table"><pre>';
+      html+='  #  Subnet    Name                 Signal      Score\n';
+      html+='  ─  ────────  ────────────────     ──────────  ─────\n';
+      results.forEach((r,i)=>{
+        const name=escHtml((r.name||'').padEnd(20).slice(0,20));
+        const sig=escHtml((r.signal||'').padEnd(10).slice(0,10));
+        const netuid=('SN'+r.netuid).padEnd(8);
+        html+='  '+(i+1)+'  '+netuid+'  '+name+'   '+sig+'  '+r.score+'\n';
+      });
+      html+='\n  Scanned: '+d.subnets_scanned+' subnets | Block: '+d.block+'\n';
+      html+='</pre></div>';
+    } else {
+      html+='<div style="color:#ffcc00;padding:1rem;font-family:sans-serif;font-size:13px">No entry signals found for '+sniperGpu+' at '+sniperRisk+' risk.<br>Try HIGH risk or a different GPU class.</div>';
+    }
+    html+='<div class="disclaimer">Entry signals are algorithmic estimates based on emission, burn, fill rate, and momentum. Not financial advice.</div>';
+    document.getElementById('result').innerHTML=html;
+  }catch(e){setError('Sniper failed: '+e.message);}
 }
 
 document.getElementById('question').addEventListener('keydown',e=>{

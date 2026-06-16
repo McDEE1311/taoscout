@@ -119,36 +119,47 @@ def gpu_fit_score(netuid, vram_gb):
     100 = perfect fit
     0   = not viable
     """
+    CPU_WORKLOADS = {"rag_chunking", "bitcoin_hashrate", "governance",
+                     "data_oracle", "social", "storage", "defi_trading",
+                     "betting_defi", "compute_rental", "rpc_infrastructure",
+                     "sports_prediction", "oracle", "time_series", "data_feed"}
     hw = get_hw_info(netuid)
     min_v   = hw.get("min_vram_gb")
     ideal_v = hw.get("ideal_vram_gb")
+    workload = hw.get("workload", "")
 
     if min_v is None:
         return {"score": 0, "label": "UNVERIFIED", "viable": False,
-                "reason": "Hardware requirements not verified for this subnet."}
+                "reason": "Hardware requirements not verified for this subnet.",
+                "workload": workload}
+
+    # CPU-only workloads score 20 — viable anywhere but not GPU-optimal
+    if min_v == 0 or workload in CPU_WORKLOADS:
+        return {"score": 20, "label": "CPU WORKLOAD", "viable": True,
+                "reason": hw.get("notes", "CPU-based. GPU not required."),
+                "workload": workload}
 
     if vram_gb < min_v:
-        return {"score": 0, "label": "NOT VIABLE",  "viable": False,
-                "reason": f"Requires {min_v}GB minimum. This card has {vram_gb}GB."}
-
+        return {"score": 0, "label": "NOT VIABLE", "viable": False,
+                "reason": f"Requires {min_v}GB minimum. This card has {vram_gb}GB.",
+                "workload": workload}
     if vram_gb >= ideal_v:
         score = 100
         label = "IDEAL FIT"
     elif vram_gb >= min_v:
-        # Linear scale between min and ideal
         score = int(50 + 50 * (vram_gb - min_v) / max(ideal_v - min_v, 1))
         label = "VIABLE"
     else:
         score = 0
         label = "NOT VIABLE"
-
     return {
         "score":   score,
         "label":   label,
         "viable":  score > 0,
-        "reason":  hw["notes"],
-        "workload": hw["workload"],
+        "reason":  hw.get("notes", ""),
+        "workload": workload,
     }
+
 
 # ── Opportunity Score ─────────────────────────────────────────────────────────
 def opportunity_score(subnet, tao_price_usd=0.0, movers=None):
@@ -163,6 +174,11 @@ def opportunity_score(subnet, tao_price_usd=0.0, movers=None):
     All math done here. LLM never sees raw calculation.
     """
     emission = float(subnet.get("emission", 0) or 0)
+    # Use TaoStats projected emission as fallback when chain emission is 0
+    if emission == 0:
+        projected = float(subnet.get("emission_projected", 0) or 0)
+        if projected > 0:
+            emission = projected
     burn     = float(subnet.get("burn_tao", 0) or 0)
     neurons  = int(subnet.get("neurons", 0) or 0)
     max_n    = int(subnet.get("max_neurons", 256) or 256)
