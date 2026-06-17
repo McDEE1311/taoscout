@@ -611,11 +611,18 @@ async def subscribe(body: SubscribeRequest):
         )
         conn.commit()
         conn.close()
-        return {"status": "ok", "message": "You're on the list!"}
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="Already subscribed")
-    except Exception as e:
+        pass  # already subscribed - still try to create/resend trial below
+    except Exception:
         raise HTTPException(status_code=500, detail="Could not save subscription")
+
+    try:
+        from taoscout_auth import create_trial_user
+        create_trial_user(email, trial_days=3, source="landing_trial")
+    except Exception as e:
+        print(f"[TRIAL CREATE ERROR] {email}: {e}")
+
+    return {"status": "ok", "message": "You're on the list! Check your email for trial access."}
 
 @app.get("/admin/subscribers")
 async def get_subscribers(key: str = Depends(verify_key)):
@@ -674,3 +681,12 @@ async def reg_opportunities(top_n: int = 10, key: str = Depends(verify_key)):
     tao_usd = enrich.get("tao_price_usd", 0.0)
     subnets = merge_taostats_enrichment(d.get("subnets", []))
     return build_registration_opportunities(subnets, tao_usd, top_n)
+
+@app.post("/admin/send-trial")
+async def admin_send_trial(email: str, days: int = 3, key: str = Depends(verify_key)):
+    """Manually send free trial access to an email address."""
+    from taoscout_auth import create_trial_user
+    if not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    result = create_trial_user(email.strip().lower(), trial_days=days, source="admin_manual")
+    return result
