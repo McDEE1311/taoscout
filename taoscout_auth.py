@@ -705,3 +705,17 @@ def create_trial_user(email: str, trial_days: int = 3, source: str = "landing_tr
         "plan": user["plan_name"],
     }
 
+
+
+def log_user_event(email: str, event: str, path: str = None, metadata: str = None, ip: str = None, ua: str = None):
+    """Log a user activity event to user_events table."""
+    try:
+        conn = get_conn()
+        conn.execute("""
+            INSERT INTO user_events (email, event, path, metadata, ip, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (email, event, path, metadata, ip, ua))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[EVENT LOG ERROR] {e}")

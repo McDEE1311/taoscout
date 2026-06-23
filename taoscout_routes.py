@@ -108,6 +108,11 @@ async def login_submit(email: str = Form(...), pin: str = Form(...)):
     if not verify_pin(pin, user["pin_hash"]):
         return HTMLResponse(_login_html("Invalid email or PIN."))
     token = create_session(email)
+    try:
+        from taoscout_auth import log_user_event
+        log_user_event(email, "login_success", path="/login")
+    except Exception:
+        pass
     resp  = RedirectResponse(url="/dashboard", status_code=302)
     resp.set_cookie("session", token, httponly=True, secure=True, max_age=86400)
     return resp
@@ -153,6 +158,12 @@ async def setup_submit(token: str = Form(...), pin: str = Form(...), pin_confirm
         setup_token=NULL, token_expires=NULL WHERE setup_token=?
     """, (hash_pin(pin), token))
     conn.commit(); conn.close()
+    try:
+        from taoscout_auth import log_user_event
+        log_user_event(user["email"], "pin_created", path="/setup")
+        log_user_event(user["email"], "login_success", path="/setup")
+    except Exception:
+        pass
     sess = create_session(user["email"])
     resp = RedirectResponse(url="/dashboard", status_code=302)
     resp.set_cookie("session", sess, httponly=True, secure=True, max_age=86400)

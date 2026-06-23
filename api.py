@@ -690,3 +690,61 @@ async def admin_send_trial(email: str, days: int = 3, key: str = Depends(verify_
         raise HTTPException(status_code=400, detail="Invalid email address")
     result = create_trial_user(email.strip().lower(), trial_days=days, source="admin_manual")
     return result
+
+# ── User Activity Event Endpoint ──────────────────────────────────────────────
+from fastapi import Request as FastAPIRequest
+
+class EventRequest(BaseModel):
+    event: str
+    path: str = None
+    metadata: str = None
+
+@app.post("/event")
+async def track_event(body: EventRequest, request: FastAPIRequest, session: Optional[str] = Cookie(default=None)):
+    """Log a frontend user event. Requires valid session cookie."""
+    if not session:
+        raise HTTPException(status_code=401, detail="No session")
+    from taoscout_auth import verify_session, log_user_event
+    user = verify_session(session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    email = user["email"]
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    log_user_event(email, body.event, path=body.path, metadata=body.metadata, ip=ip, ua=ua)
+    return {"status": "ok"}
+
+@app.get("/admin/user-activity")
+async def user_activity(key: str = Depends(verify_key)):
+    """Admin — user activity summary."""
+    import sqlite3 as _sq
+    conn = _sq.connect(str(Path(__file__).parent / "data" / "taoscout_users.db"))
+    conn.row_factory = _sq.Row
+    rows = conn.execute("""
+        SELECT u.roster_num, u.email, u.plan_name, u.status, u.subscription_status,
+               COUNT(DISTINCT s.id) as login_count,
+               COUNT(DISTINCT e.id) as event_count,
+               MAX(e.created_at) as last_event,
+               MAX(s.created_at) as last_login
+        FROM users u
+        LEFT JOIN sessions s ON s.email=u.email
+        LEFT JOIN user_events e ON e.email=u.email
+        GROUP BY u.email
+        ORDER BY last_login DESC
+    """).fetchall()
+    conn.close()
+    return {"users": [dict(r) for r in rows]}
+
+@app.get("/admin/user-events")
+async def user_events_log(email: str, key: str = Depends(verify_key)):
+    """Admin — event log for a specific user."""
+    import sqlite3 as _sq
+    conn = _sq.connect(str(Path(__file__).parent / "data" / "taoscout_users.db"))
+    conn.row_factory = _sq.Row
+    rows = conn.execute("""
+        SELECT event, path, metadata, ip, created_at
+        FROM user_events WHERE email=?
+        ORDER BY created_at DESC LIMIT 100
+    """, (email,)).fetchall()
+    conn.close()
+    return {"email": email, "events": [dict(r) for r in rows]}
