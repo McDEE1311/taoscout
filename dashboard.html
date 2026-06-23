@@ -232,7 +232,7 @@ async function runAction(action){
   }
 
   if(action==='refresh'){
-    setLoading('Refreshing chain data');
+    logEvent('refresh_chain_clicked');setLoading('Refreshing chain data');
     try{
       const r=await fetch(API+'/admin/refresh',{method:'POST',headers:H});
       const d=await r.json();
@@ -267,12 +267,21 @@ async function runAction(action){
 
 let sniperGpu='24gb', sniperRisk='medium';
 
+function logEvent(evt) {
+  try {
+    fetch('/event', {method:'POST',headers:{'Content-Type':'application/json'},
+      credentials:'include',body:JSON.stringify({event:evt,path:'/dashboard'})
+    }).catch(()=>{});
+  } catch(e) {}
+}
+
 async function runIntel(endpoint) {
   const titles = {
     'stake-flow': 'STAKE FLOW — Leading Indicators',
     'death-risk': 'SUBNET DEATH RISK',
     'reg-opportunities': 'REGISTRATION OPPORTUNITIES'
   };
+  logEvent(endpoint+'_clicked');
   setLoading(titles[endpoint] || endpoint);
   try {
     const r = await fetch(API+'/'+endpoint, {headers:H});
@@ -360,6 +369,7 @@ function setRisk(val){
 }
 
 async function runSniper(){
+  logEvent('sniper_scan_clicked');
   document.getElementById('sniper-panel').style.display='none';
   setLoading('Sniper Mode — '+sniperGpu+' / '+sniperRisk+' risk');
   try{
