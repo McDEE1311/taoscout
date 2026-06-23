@@ -61,6 +61,17 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
 .fields-used { font-size: 10px; color: #333; margin-top: 6px; font-style: italic; }
 .footer { text-align: center; padding: 2rem; color: #333; font-size: 11px; border-top: 1px solid #1a1a1a; margin-top: 2rem; }
 .router-badge { font-size: 10px; color: #333; background: #111; border: 1px solid #222; border-radius: 3px; padding: 2px 6px; margin-left: 8px; }
+.trial-banner{background:#1a1200;border:1px solid #3a2800;border-radius:6px;padding:10px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;font-family:'Courier New',monospace;font-size:12px}
+.trial-banner span{color:#ffaa00}
+.trial-banner a{background:#ffaa00;color:#000;padding:6px 14px;border-radius:4px;text-decoration:none;font-weight:700;font-size:11px;letter-spacing:1px}
+.upgrade-card{background:#0a0a1a;border:1px solid #1e1e3e;border-radius:8px;padding:20px;margin-top:16px}
+.upgrade-card h3{color:#00d4ff;font-family:'Courier New',monospace;font-size:13px;letter-spacing:1px;margin:0 0 16px 0}
+.plan-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #1a1a2e}
+.plan-row:last-child{border-bottom:none}
+.plan-name{color:#e0e0e0;font-size:13px}
+.plan-price{color:#00ff88;font-family:'Courier New',monospace;font-size:13px}
+.plan-badge{background:#00d4ff;color:#000;font-size:9px;padding:2px 6px;border-radius:3px;margin-left:6px;font-weight:700}
+.upgrade-btn{display:block;background:#00d4ff;color:#000;text-align:center;padding:10px;border-radius:6px;text-decoration:none;font-family:'Courier New',monospace;font-weight:700;font-size:12px;letter-spacing:1px;margin-top:16px}
 </style>
 </head>
 <body>
@@ -406,6 +417,13 @@ async function runSniper(){
     document.getElementById('result').innerHTML=html;
   }catch(e){setError('Sniper failed: '+e.message);}
 }
+
+// Show trial banner for trial users
+fetch('/account', {credentials:'include'}).then(r=>r.json()).then(d=>{
+  if(d && d.plan && d.plan.toLowerCase().includes('trial')){
+    document.getElementById('trial-banner').style.display='flex';
+  }
+}).catch(()=>{});
 
 document.getElementById('question').addEventListener('keydown',e=>{
   if(e.key==='Enter')runAction('ask');
