@@ -286,6 +286,39 @@ a{{color:#00d4ff;text-decoration:none}}</style>
 <p><a href="/dashboard">← Dashboard</a> &nbsp; <a href="/logout" style="color:#555">Logout</a></p>
 </body></html>""")
 
+@app.get("/order", response_class=HTMLResponse)
+async def order_page(plan: str = "", session: Optional[str] = Cookie(default=None)):
+    """Order page - optionally pre-selects a plan via ?plan= query param."""
+    user = verify_session(session) if session else None
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    plans_opts = ""
+    for pid, pdata in PLANS.items():
+        if pid == "influencer_trial":
+            continue
+        selected = "selected" if pid == plan else ""
+        plans_opts += f'<option value="{pid}" {selected}>{pdata["name"]} — {pdata["tao_amount"]} TAO/{pdata.get("duration_days",30)}d</option>'
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>TaoScout — Subscribe</title>
+<style>body{{background:#0a0a0a;color:#e0e0e0;font-family:'Courier New',monospace;padding:2rem;max-width:500px;margin:0 auto}}
+h1{{color:#00d4ff;margin-bottom:2rem;font-size:18px;letter-spacing:2px}}
+.card{{background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:1.5rem;margin:1rem 0}}
+select{{width:100%;background:#0a0a1a;border:1px solid #2a2a3e;color:#e0e0e0;padding:10px;border-radius:4px;font-family:'Courier New',monospace;font-size:13px;margin-bottom:1rem}}
+button{{background:#00d4ff;color:#000;border:none;padding:12px 24px;border-radius:4px;font-family:'Courier New',monospace;font-weight:700;cursor:pointer;width:100%;font-size:13px;letter-spacing:1px}}
+p{{font-size:12px;color:#555;margin-top:8px}}
+a{{color:#00d4ff;text-decoration:none}}</style></head><body>
+<h1>TAOSCOUT — SUBSCRIBE</h1>
+<div class="card">
+<p style="color:#888;margin-bottom:1rem;font-size:13px">Logged in as {user['email']} ({user['roster_num']})</p>
+<form method="post" action="/order-form">
+<select name="plan_id">{plans_opts}</select>
+<p style="color:#555;font-size:11px;margin-bottom:1rem">You'll receive payment instructions by email. Access activates automatically in ~5 min after payment is detected.</p>
+<button type="submit">Get Payment Instructions →</button>
+</form>
+</div>
+<p><a href="/dashboard">← Back to Dashboard</a></p>
+</body></html>""")
+
 @app.post("/order-form", response_class=HTMLResponse)
 async def order_form_post(plan_id: str = Form(...), session: Optional[str] = Cookie(default=None)):
     user = verify_session(session) if session else None
