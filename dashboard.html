@@ -105,9 +105,38 @@ body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospac
     <button class="btn" onclick="runIntel('reg-opportunities')"><span class="btn-icon">&#43;</span>Reg Opps</button>
     <button class="btn" onclick="runAction('status')"><span class="btn-icon">&#10792;</span>System Status</button>
   </div>
-    <div id="trial-banner" class="trial-banner" style="display:none">
-    <span>⏳ You are on a free trial. Lock in full access before it expires.</span>
-    <a href="/order">Upgrade →</a>
+    <div id="trial-banner" style="display:none;margin-bottom:12px">
+    <div style="background:#1a1200;border:1px solid #3a2800;border-radius:6px;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;font-family:'Courier New',monospace;font-size:12px;margin-bottom:8px">
+      <span style="color:#ffaa00">⏳ You are on a free trial — keep Death Risk, Stake Flow & all intelligence features</span>
+      <a href="/order" onclick="logEvent('upgrade_clicked')" style="background:#ffaa00;color:#000;padding:6px 14px;border-radius:4px;text-decoration:none;font-weight:700;font-size:11px;letter-spacing:1px;white-space:nowrap;margin-left:12px">Upgrade →</a>
+    </div>
+    <div style="background:#0a0a1a;border:1px solid #1e1e3e;border-radius:8px;padding:16px;font-family:'Courier New',monospace">
+      <div style="color:#00d4ff;font-size:11px;letter-spacing:1px;margin-bottom:12px">OPERATOR PLANS — PAY IN TAO — ACCESS IN ~5 MIN</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <a href="/order?plan=miner_monthly" onclick="logEvent('upgrade_clicked')" style="display:block;background:#0a0a0a;border:1px solid #2a2a3e;border-radius:6px;padding:12px;text-decoration:none;color:#e0e0e0">
+          <div style="font-size:13px;font-weight:700">Miner</div>
+          <div style="color:#00ff88;font-size:16px;font-weight:700;margin:4px 0">0.04 TAO<span style="font-size:10px;color:#555">/mo</span></div>
+          <div style="color:#555;font-size:10px">~$10 · Core intel</div>
+        </a>
+        <a href="/order?plan=operator_monthly" onclick="logEvent('upgrade_clicked')" style="display:block;background:#0a1a0a;border:1px solid #00d4ff;border-radius:6px;padding:12px;text-decoration:none;color:#e0e0e0;position:relative">
+          <div style="position:absolute;top:-8px;right:8px;background:#00d4ff;color:#000;font-size:9px;padding:2px 6px;border-radius:3px;font-weight:700">POPULAR</div>
+          <div style="font-size:13px;font-weight:700">Operator</div>
+          <div style="color:#00ff88;font-size:16px;font-weight:700;margin:4px 0">0.11 TAO<span style="font-size:10px;color:#555">/mo</span></div>
+          <div style="color:#555;font-size:10px">~$25 · Full dashboard</div>
+        </a>
+        <a href="/order?plan=operator_quarterly" onclick="logEvent('upgrade_clicked')" style="display:block;background:#0a0a0a;border:1px solid #2a2a3e;border-radius:6px;padding:12px;text-decoration:none;color:#e0e0e0">
+          <div style="font-size:13px;font-weight:700">Operator Quarterly</div>
+          <div style="color:#00ff88;font-size:16px;font-weight:700;margin:4px 0">0.30 TAO<span style="font-size:10px;color:#555">/90d</span></div>
+          <div style="color:#555;font-size:10px">~$68 · Save 9%</div>
+        </a>
+        <a href="/order?plan=premium_annual" onclick="logEvent('upgrade_clicked')" style="display:block;background:#0a0a1a;border:1px solid #2a2a4e;border-radius:6px;padding:12px;text-decoration:none;color:#e0e0e0">
+          <div style="font-size:13px;font-weight:700">Premium Annual</div>
+          <div style="color:#00ff88;font-size:16px;font-weight:700;margin:4px 0">1.00 TAO<span style="font-size:10px;color:#555">/yr</span></div>
+          <div style="color:#555;font-size:10px">~$224 · 4 months free</div>
+        </a>
+      </div>
+      <div style="color:#444;font-size:10px;margin-top:10px;text-align:center">Send TAO → access activates automatically in ~5 min via payment watcher</div>
+    </div>
   </div>
 
 <div id="sniper-panel" style="display:none;background:#111;border:1px solid #1e1e2e;border-radius:8px;padding:16px;margin:0 0 12px 0">
