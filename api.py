@@ -748,3 +748,19 @@ async def user_events_log(email: str, key: str = Depends(verify_key)):
     """, (email,)).fetchall()
     conn.close()
     return {"email": email, "events": [dict(r) for r in rows]}
+
+@app.get("/account-info")
+async def account_info(session: Optional[str] = Cookie(default=None)):
+    """JSON endpoint for dashboard to check current user plan."""
+    if not session:
+        return {"plan": None, "status": None}
+    from taoscout_auth import verify_session
+    user = verify_session(session)
+    if not user:
+        return {"plan": None, "status": None}
+    return {
+        "plan": user.get("plan_name"),
+        "status": user.get("status"),
+        "roster_num": user.get("roster_num"),
+        "subscription_status": user.get("subscription_status"),
+    }

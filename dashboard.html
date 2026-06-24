@@ -424,7 +424,7 @@ async function runSniper(){
 }
 
 // Show trial banner for trial users
-fetch('/account', {credentials:'include'}).then(r=>r.json()).then(d=>{
+fetch('/account-info', {credentials:'include'}).then(r=>r.json()).then(d=>{
   if(d && d.plan && d.plan.toLowerCase().includes('trial')){
     document.getElementById('trial-banner').style.display='flex';
   }
