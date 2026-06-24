@@ -507,14 +507,25 @@ def check_expirations():
     conn = get_conn()
     now = datetime.now(timezone.utc)
     for days in [7, 1]:
+        col    = f"reminder_{days}d_sent"
         window = (now + timedelta(days=days)).isoformat()
         prev   = (now + timedelta(days=days-1)).isoformat()
-        users  = conn.execute("""
+        users  = conn.execute(f"""
             SELECT * FROM users WHERE subscription_status='active'
             AND expires_at <= ? AND expires_at > ?
+            AND {col} = 0
         """, (window, prev)).fetchall()
         for u in users:
             send_renewal_reminder(u["email"], u["roster_num"], u["expires_at"], days)
+            conn.execute(f"UPDATE users SET {col}=1 WHERE email=?", (u["email"],))
+        conn.commit()
+    # Reset reminder flags when user renews (expires_at pushed forward)
+    conn.execute("""
+        UPDATE users SET reminder_7d_sent=0, reminder_1d_sent=0
+        WHERE subscription_status='active'
+        AND datetime(expires_at) > datetime('now', '+2 days')
+        AND (reminder_7d_sent=1 OR reminder_1d_sent=1)
+    """)
     conn.execute("""
         UPDATE users SET subscription_status='expired', role='free'
         WHERE subscription_status='active' AND datetime(expires_at) < datetime('now')
