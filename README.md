@@ -43,3 +43,12 @@ Protected endpoints require X-API-Key.
 ## Notes
 
 TaoScout is operator tooling. Informational only. Not financial advice.
+
+## Market research preview (separate foundation)
+
+An isolated TAO spot-research engine, historical simulation CLI, paper publication
+ledger, and installable public preview are in `market/`. This is not a completed
+paid Pro product or a verified trading track record. Existing operator behavior
+is unchanged unless `market_research_enabled` is explicitly enabled.
+
+See [setup, methodology, tests, and remaining launch work](docs/MARKET_RESEARCH.md).
