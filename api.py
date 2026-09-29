@@ -555,6 +555,15 @@ except Exception as e:
     print(f"WARNING: TaoScout auth/payment routes failed to load: {e}")
     traceback.print_exc()
 
+# Optional public research preview. Disabled unless explicitly configured.
+# Customer auth/Stripe are intentionally not inferred from operator API keys.
+if CFG.get("market_research_enabled", False):
+    from market.web import create_app as create_market_app
+    app.mount("/market", create_market_app(
+        ledger=CFG.get("market_ledger_path", str(SCRIPT_DIR / "data" / "market-research.db")),
+        report=CFG.get("market_report_path"),
+    ))
+
 if __name__ == "__main__":
     import uvicorn
     print(f"\n  TaoScout API v1.3.0 — Launch Hardened")
