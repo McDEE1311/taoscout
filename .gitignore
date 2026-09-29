@@ -14,3 +14,4 @@ landing_beta.py
 patch_subnet_meta.py
 install_auth.sh
 .venv-market/
+.venv-stripe-test/

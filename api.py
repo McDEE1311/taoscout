@@ -564,6 +564,25 @@ if CFG.get("market_research_enabled", False):
         report=CFG.get("market_report_path"),
     ))
 
+# ── TaoScout Stripe Billing Routes (Free/Pro) ─────────────────────────────────
+# Isolated from the TAO payment system above: separate tables, separate
+# expiration worker. Disabled automatically until STRIPE_SECRET_KEY and
+# STRIPE_WEBHOOK_SECRET are configured.
+try:
+    from taoscout_stripe import (
+        STRIPE_ENABLED, get_entitlement, has_pro,
+        create_checkout_session, create_billing_portal_session,
+        verify_webhook, handle_event, claim_webhook_event,
+        start_stripe_reconciler,
+    )
+    exec(open(str(SCRIPT_DIR / "taoscout_stripe_routes.py")).read())
+    start_stripe_reconciler(interval_seconds=3600)
+    print(f"TaoScout Stripe billing routes loaded (enabled={STRIPE_ENABLED})")
+except Exception as e:
+    import traceback
+    print(f"WARNING: TaoScout Stripe billing routes failed to load: {e}")
+    traceback.print_exc()
+
 if __name__ == "__main__":
     import uvicorn
     print(f"\n  TaoScout API v1.3.0 — Launch Hardened")
