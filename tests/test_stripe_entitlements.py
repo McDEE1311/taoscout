@@ -5,10 +5,17 @@ live file at data/taoscout_users.db.
 
 Before taoscout_stripe is ever imported, TAOSCOUT_STRIPE_DB is pointed at a
 temp copy of the current production database (if one exists locally) so
-this module's import-time init_db() cannot write to production. This is
-also the "test migrations on a database copy" step: init_db()'s CREATE
-TABLE IF NOT EXISTS is applied to that copy, and we assert the pre-existing
-users/orders/sessions rows are byte-for-byte unchanged afterward.
+taoscout_auth.py's import-time init_db() (which does run unconditionally,
+same as it always has) cannot write to production. This is also the "test
+migrations on a database copy" step: init_db()'s CREATE TABLE IF NOT EXISTS
+is applied to that copy, and we assert the pre-existing users/orders/sessions
+rows are byte-for-byte unchanged afterward.
+
+taoscout_stripe.py's own init_db() only runs at import time when
+STRIPE_ENABLED is already true (see TestDisabledStripeHasNoSideEffects
+below, which verifies this in a fresh subprocess — STRIPE_ENABLED is fixed
+at import time, so it can't be re-tested within this already-imported
+process).
 """
 import hashlib
 import hmac
@@ -16,6 +23,7 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -157,10 +165,13 @@ class TestWebhookSecurity(StripeIsolationSetup):
             ts.verify_webhook(payload, header)
 
     def test_duplicate_event_id_is_ignored_on_second_delivery(self):
-        first = ts.claim_webhook_event("evt_dup", "customer.subscription.created")
-        second = ts.claim_webhook_event("evt_dup", "customer.subscription.created")
-        self.assertTrue(first)
-        self.assertFalse(second)
+        sub = make_subscription("sub_dupcheck", "cus_dupcheck", "active", int(time.time()) + 3600)
+        event = make_event("evt_dup", "customer.subscription.created", sub, created=1000)
+        ts.save_customer_id("dupcheck@example.com", "cus_dupcheck")
+        first = ts.process_webhook_event(event)
+        second = ts.process_webhook_event(event)
+        self.assertEqual(first, "applied")
+        self.assertEqual(second, "duplicate_ignored")
 
 
 class TestCheckoutDoesNotGrantAccess(StripeIsolationSetup):
@@ -171,7 +182,7 @@ class TestCheckoutDoesNotGrantAccess(StripeIsolationSetup):
             "customer_details": {"email": "buyer@example.com"},
         }
         event = make_event("evt_checkout", "checkout.session.completed", session_obj)
-        result = ts.handle_event(event)
+        result = ts.process_webhook_event(event)
         self.assertEqual(result, "customer_linked")
         self.assertEqual(ts.get_customer_id("buyer@example.com"), "cus_ck1")
         # Checkout completing must never itself grant Pro access.
@@ -183,7 +194,7 @@ class TestSubscriptionLifecycle(StripeIsolationSetup):
         ts.save_customer_id("pro@example.com", "cus_active")
         future = int(time.time()) + 30 * 86400
         sub = make_subscription("sub_active", "cus_active", "active", future)
-        ts.handle_event(make_event("evt_a1", "customer.subscription.created", sub, created=1000))
+        ts.process_webhook_event(make_event("evt_a1", "customer.subscription.created", sub, created=1000))
         ent = ts.get_entitlement("pro@example.com")
         self.assertTrue(ent["pro"])
         self.assertEqual(ent["plan"], "pro_monthly")
@@ -192,11 +203,11 @@ class TestSubscriptionLifecycle(StripeIsolationSetup):
         ts.save_customer_id("cancel@example.com", "cus_cancel")
         future = int(time.time()) + 30 * 86400
         active_sub = make_subscription("sub_cancel", "cus_cancel", "active", future)
-        ts.handle_event(make_event("evt_c1", "customer.subscription.created", active_sub, created=1000))
+        ts.process_webhook_event(make_event("evt_c1", "customer.subscription.created", active_sub, created=1000))
         self.assertTrue(ts.has_pro("cancel@example.com"))
 
         canceled_sub = make_subscription("sub_cancel", "cus_cancel", "canceled", future)
-        ts.handle_event(make_event("evt_c2", "customer.subscription.deleted", canceled_sub, created=2000))
+        ts.process_webhook_event(make_event("evt_c2", "customer.subscription.deleted", canceled_sub, created=2000))
         self.assertFalse(ts.has_pro("cancel@example.com"))
 
     def test_out_of_order_event_does_not_regress_state(self):
@@ -204,14 +215,45 @@ class TestSubscriptionLifecycle(StripeIsolationSetup):
         future = int(time.time()) + 30 * 86400
         active_sub = make_subscription("sub_order", "cus_order", "active", future)
         # Newer event (created=5000) applied first...
-        ts.handle_event(make_event("evt_o1", "customer.subscription.updated", active_sub, created=5000))
+        ts.process_webhook_event(make_event("evt_o1", "customer.subscription.updated", active_sub, created=5000))
         self.assertTrue(ts.has_pro("order@example.com"))
 
         # ...then an older, out-of-order "canceled" event (created=1000) arrives late.
         stale_canceled = make_subscription("sub_order", "cus_order", "canceled", future)
-        result = ts.handle_event(make_event("evt_o2", "customer.subscription.deleted", stale_canceled, created=1000))
+        result = ts.process_webhook_event(make_event("evt_o2", "customer.subscription.deleted", stale_canceled, created=1000))
         self.assertEqual(result, "stale_ignored")
         self.assertTrue(ts.has_pro("order@example.com"), "an out-of-order event must not revoke a newer active state")
+
+    def test_failure_between_dedupe_and_entitlement_update_is_fully_rolled_back_and_retryable(self):
+        """Regression test: claim_webhook_event() used to commit its dedupe
+        row BEFORE handle_event() ran, so a processing failure meant a
+        genuine Stripe retry of the same event id was discarded as a
+        duplicate and the entitlement change was permanently lost.
+        process_webhook_event() must roll back everything — including the
+        dedupe marker — on failure, so a retry of the same event fully
+        reprocesses it."""
+        ts.save_customer_id("retry@example.com", "cus_retry")
+        future = int(time.time()) + 30 * 86400
+        sub = make_subscription("sub_retry", "cus_retry", "active", future)
+        event = make_event("evt_retry", "customer.subscription.created", sub, created=1000)
+
+        with mock.patch.object(ts, "_upsert_subscription_tx", side_effect=RuntimeError("simulated DB failure")):
+            with self.assertRaises(RuntimeError):
+                ts.process_webhook_event(event)
+
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        dedupe_row = conn.execute("SELECT 1 FROM stripe_webhook_events WHERE event_id='evt_retry'").fetchone()
+        entitlement_row = conn.execute("SELECT 1 FROM stripe_entitlements WHERE stripe_subscription_id='sub_retry'").fetchone()
+        conn.close()
+        self.assertIsNone(dedupe_row, "a failed delivery must not be marked processed")
+        self.assertIsNone(entitlement_row, "a failed delivery must not partially apply the entitlement")
+        self.assertFalse(ts.has_pro("retry@example.com"))
+
+        # Stripe retries the identical event after the transient failure clears.
+        result = ts.process_webhook_event(event)
+        self.assertEqual(result, "applied")
+        self.assertTrue(ts.has_pro("retry@example.com"))
 
     def test_duplicate_webhook_delivery_is_idempotent(self):
         ts.save_customer_id("idem@example.com", "cus_idem")
@@ -222,8 +264,7 @@ class TestSubscriptionLifecycle(StripeIsolationSetup):
 
         for _ in range(3):
             event = ts.verify_webhook(payload, header)
-            if ts.claim_webhook_event(event["id"], event["type"]):
-                ts.handle_event(event)
+            ts.process_webhook_event(event)
 
         conn = sqlite3.connect(str(self.db_path))
         count = conn.execute("SELECT COUNT(*) FROM stripe_entitlements WHERE stripe_subscription_id='sub_idem'").fetchone()[0]
@@ -236,7 +277,7 @@ class TestExpirationReconciliation(StripeIsolationSetup):
         ts.save_customer_id("expiring@example.com", "cus_exp")
         past = int(time.time()) - 3600
         sub = make_subscription("sub_exp", "cus_exp", "active", past)
-        ts.handle_event(make_event("evt_exp", "customer.subscription.created", sub, created=1000))
+        ts.process_webhook_event(make_event("evt_exp", "customer.subscription.created", sub, created=1000))
         # get_entitlement already treats a past current_period_end as not-pro...
         self.assertFalse(ts.has_pro("expiring@example.com"))
         # ...and the reconciler flips the stored status accordingly.
@@ -258,9 +299,9 @@ class TestCrossSystemIsolation(StripeIsolationSetup):
         ts.save_customer_id("iso@example.com", "cus_iso")
         future = int(time.time()) + 30 * 86400
         sub = make_subscription("sub_iso", "cus_iso", "active", future)
-        ts.handle_event(make_event("evt_iso1", "customer.subscription.created", sub, created=1000))
+        ts.process_webhook_event(make_event("evt_iso1", "customer.subscription.created", sub, created=1000))
         canceled = make_subscription("sub_iso", "cus_iso", "canceled", future)
-        ts.handle_event(make_event("evt_iso2", "customer.subscription.deleted", canceled, created=2000))
+        ts.process_webhook_event(make_event("evt_iso2", "customer.subscription.deleted", canceled, created=2000))
         ts.reconcile_expirations()
 
         conn = sqlite3.connect(str(self.db_path))
@@ -274,7 +315,7 @@ class TestCrossSystemIsolation(StripeIsolationSetup):
         ts.save_customer_id("tao-iso@example.com", "cus_tao_iso")
         future = int(time.time()) + 30 * 86400
         sub = make_subscription("sub_tao_iso", "cus_tao_iso", "active", future)
-        ts.handle_event(make_event("evt_ti1", "customer.subscription.created", sub, created=1000))
+        ts.process_webhook_event(make_event("evt_ti1", "customer.subscription.created", sub, created=1000))
 
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
@@ -307,9 +348,9 @@ class TestCrossSystemIsolation(StripeIsolationSetup):
         ts.save_customer_id("both@example.com", "cus_both")
         future = int(time.time()) + 30 * 86400
         sub = make_subscription("sub_both", "cus_both", "active", future)
-        ts.handle_event(make_event("evt_b1", "customer.subscription.created", sub, created=1000))
+        ts.process_webhook_event(make_event("evt_b1", "customer.subscription.created", sub, created=1000))
         canceled = make_subscription("sub_both", "cus_both", "canceled", future)
-        ts.handle_event(make_event("evt_b2", "customer.subscription.deleted", canceled, created=2000))
+        ts.process_webhook_event(make_event("evt_b2", "customer.subscription.deleted", canceled, created=2000))
 
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
@@ -368,6 +409,50 @@ class TestCheckoutSessionCreation(StripeIsolationSetup):
         self.assertEqual(url, "https://checkout.stripe.com/test-session")
         self.assertEqual(len(fake.Customer.calls), 0, "should not create a new Stripe customer when one is cached")
         self.assertEqual(fake.checkout.Session.calls[0]["customer"], "cus_existing_123")
+
+
+class TestDisabledStripeHasNoSideEffects(unittest.TestCase):
+    """STRIPE_ENABLED is computed once at import time, so verifying its
+    effect on import-time behavior requires a fresh interpreter per case
+    rather than reusing the already-imported `ts` module in this process."""
+
+    def _run(self, env_overrides, code):
+        env = dict(os.environ)
+        for k in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"):
+            env.pop(k, None)
+        env.update(env_overrides)
+        env["PYTHONPATH"] = str(BASE_DIR)
+        return subprocess.run([sys.executable, "-c", code], cwd=str(BASE_DIR),
+                               env=env, capture_output=True, text=True)
+
+    def test_unconfigured_stripe_creates_no_database_file_at_import(self):
+        scratch = _TEST_DIR / "disabled_no_side_effects.db"
+        result = self._run({"TAOSCOUT_STRIPE_DB": str(scratch)}, "import taoscout_stripe")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(scratch.exists(),
+                          "importing taoscout_stripe with no keys configured must not create a database file")
+
+    def test_live_looking_secret_key_never_enables_stripe(self):
+        scratch = _TEST_DIR / "live_key_check.db"
+        result = self._run({
+            "STRIPE_SECRET_KEY": "sk_live_should_never_enable_anything",
+            "STRIPE_WEBHOOK_SECRET": "whsec_whatever",
+            "TAOSCOUT_STRIPE_DB": str(scratch),
+        }, "import taoscout_stripe; print('ENABLED=', taoscout_stripe.STRIPE_ENABLED)")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ENABLED= False", result.stdout)
+        self.assertFalse(scratch.exists(), "a live-looking key must not enable Stripe or touch the database")
+
+    def test_test_mode_key_with_webhook_secret_enables_and_initializes_tables(self):
+        scratch = _TEST_DIR / "test_mode_key_check.db"
+        result = self._run({
+            "STRIPE_SECRET_KEY": "sk_test_abc123",
+            "STRIPE_WEBHOOK_SECRET": "whsec_abc123",
+            "TAOSCOUT_STRIPE_DB": str(scratch),
+        }, "import taoscout_stripe; print('ENABLED=', taoscout_stripe.STRIPE_ENABLED)")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ENABLED= True", result.stdout)
+        self.assertTrue(scratch.exists(), "enabling Stripe (test-mode key + webhook secret) should create its tables")
 
 
 if __name__ == "__main__":

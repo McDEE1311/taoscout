@@ -584,6 +584,25 @@ def verify_session(token: str):
     conn.close()
     return dict(row) if row else None
 
+def verify_identity(token: str):
+    """Session identity only — does NOT require an active/unexpired TAO
+    subscription. For product surfaces whose access is governed by their
+    own entitlement rules (e.g. Stripe-funded Pro), not TAO's, so a
+    Stripe-only customer or a customer with expired TAO access can still
+    be identified and log in. verify_session() above is unchanged and
+    still gates the existing TAO-funded endpoints (dashboard, account,
+    etc.) on TAO subscription validity."""
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT s.email, u.roster_num
+        FROM sessions s
+        JOIN users u ON s.email = u.email
+        WHERE s.session_token=?
+        AND datetime(s.expires_at) > datetime('now')
+    """, (token,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def delete_session(token: str):
     conn = get_conn()
     conn.execute("DELETE FROM sessions WHERE session_token=?", (token,))

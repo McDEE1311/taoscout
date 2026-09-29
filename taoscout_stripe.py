@@ -36,8 +36,7 @@ def load_env():
 ENV = load_env()
 
 # TAOSCOUT_STRIPE_DB lets tests/tooling point this module at a database copy
-# without ever touching the live file — this module's init_db() below runs
-# unconditionally at import time, same as taoscout_auth.py's pattern.
+# without ever touching the live file.
 DB_PATH = Path(ENV.get("TAOSCOUT_STRIPE_DB", str(BASE_DIR / "data" / "taoscout_users.db")))
 
 STRIPE_SECRET_KEY        = ENV.get("STRIPE_SECRET_KEY", "")
@@ -46,9 +45,20 @@ STRIPE_PRICE_PRO_MONTHLY = ENV.get("STRIPE_PRICE_PRO_MONTHLY", "")
 STRIPE_PRICE_PRO_ANNUAL  = ENV.get("STRIPE_PRICE_PRO_ANNUAL", "")
 BASE_URL                 = ENV.get("BASE_URL", "https://app.taoscout.com")
 
-# Enabled only when both keys are present, mirroring market_research_enabled:
-# a missing/unconfigured Stripe setup never breaks the rest of the app.
-STRIPE_ENABLED = bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)
+# Test-mode is enforced at this stage: a live-looking secret key (sk_live_...)
+# never enables billing, regardless of what else is configured. This is a
+# deliberate guardrail, not just a test convenience — live charges are not
+# authorized yet.
+_looks_like_test_key = STRIPE_SECRET_KEY.startswith("sk_test_")
+if STRIPE_SECRET_KEY and not _looks_like_test_key:
+    print("[STRIPE] STRIPE_SECRET_KEY is not a test-mode key (sk_test_...). "
+          "Refusing to enable Stripe billing — live billing is not authorized at this stage.")
+
+# Enabled only when both keys are present AND the secret key is test-mode.
+# A missing/unconfigured/non-test Stripe setup never breaks the rest of the
+# app, and — critically — never causes this module to touch the database or
+# start a background worker (see the bottom of this file).
+STRIPE_ENABLED = bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET and _looks_like_test_key)
 
 PRICE_PLANS = {
     "pro_monthly": {"price_id": STRIPE_PRICE_PRO_MONTHLY, "label": "Pro Monthly", "amount_usd": 2.99},
@@ -112,7 +122,13 @@ def init_db():
     conn.close()
 
 
-init_db()
+# Unlike taoscout_auth.py's pattern, this does NOT run unconditionally at
+# import time: a disabled/unconfigured Stripe setup must have zero database
+# side effects. Tests call init_db() explicitly regardless of STRIPE_ENABLED
+# (see tests/test_stripe_entitlements.py), so this gate only affects
+# production import behavior.
+if STRIPE_ENABLED:
+    init_db()
 
 
 def _iso(unix_ts):
@@ -199,32 +215,31 @@ def verify_webhook(payload: bytes, sig_header: str):
     return client.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
 
 
-def claim_webhook_event(event_id, event_type):
-    """True if this event has not been processed before (and is now claimed).
-    INSERT OR IGNORE dedupes atomically across duplicate/concurrent deliveries."""
-    conn = get_conn()
-    cur = conn.execute(
-        "INSERT OR IGNORE INTO stripe_webhook_events (event_id, type) VALUES (?, ?)",
-        (event_id, event_type),
-    )
-    conn.commit()
-    claimed = cur.rowcount == 1
-    conn.close()
-    return claimed
+# ── Entitlement state (transaction-scoped helpers) ────────────────────────
+# These take an explicit connection and never commit themselves: the caller
+# (process_webhook_event, below) controls the transaction so the dedupe
+# marker and the entitlement change commit — or roll back — together.
+def _save_customer_id_tx(conn, email, customer_id):
+    conn.execute("""
+        INSERT INTO stripe_customers (email, stripe_customer_id) VALUES (?, ?)
+        ON CONFLICT(email) DO UPDATE SET stripe_customer_id=excluded.stripe_customer_id
+    """, (email, customer_id))
 
 
-# ── Entitlement state ─────────────────────────────────────────────────────
-def _upsert_subscription(sub, email, event_created):
+def _get_email_for_customer_tx(conn, customer_id):
+    row = conn.execute("SELECT email FROM stripe_customers WHERE stripe_customer_id=?", (customer_id,)).fetchone()
+    return row["email"] if row else None
+
+
+def _upsert_subscription_tx(conn, sub, email, event_created):
     """Insert/update one subscription row, guarded against out-of-order
     delivery: an event no newer than the last one applied to this
     subscription is ignored rather than allowed to regress state."""
-    conn = get_conn()
     existing = conn.execute(
         "SELECT last_event_created FROM stripe_entitlements WHERE stripe_subscription_id=?",
         (sub["id"],),
     ).fetchone()
     if existing and event_created <= existing["last_event_created"]:
-        conn.close()
         return False
 
     items = (sub.get("items") or {}).get("data") or []
@@ -245,27 +260,14 @@ def _upsert_subscription(sub, email, event_created):
             updated_at=datetime('now')
     """, (email, sub["id"], price_id, plan, sub["status"], period_end,
           int(bool(sub.get("cancel_at_period_end"))), event_created))
-    conn.commit()
-    conn.close()
     return True
 
 
-def handle_event(event):
-    """Dispatch one verified, deduped Stripe event. Returns a short status
-    string for logging/tests.
-
-    checkout.session.completed ONLY links customer<->email; it never writes
-    an entitlement row. Access is granted/revoked exclusively by
+def _dispatch_tx(conn, event):
+    """checkout.session.completed ONLY links customer<->email; it never
+    writes an entitlement row. Access is granted/revoked exclusively by
     customer.subscription.* events, which Stripe sends independently and
-    which carry the authoritative status/current_period_end.
-    """
-    # verify_webhook() returns a real stripe.Event (a StripeObject): it
-    # supports event["key"] subscripting but raises AttributeError on
-    # .get(...) by design (it wants an explicit .to_dict() first). Normalize
-    # once here so the rest of this function can use plain dict semantics
-    # for both real Stripe objects and the plain dicts used in tests.
-    if hasattr(event, "to_dict"):
-        event = event.to_dict()
+    which carry the authoritative status/current_period_end."""
     etype = event["type"]
     created = event["created"]
     obj = event["data"]["object"]
@@ -277,19 +279,53 @@ def handle_event(event):
                  or obj.get("customer_email"))
         customer_id = obj.get("customer")
         if email and customer_id:
-            save_customer_id(email.lower().strip(), customer_id)
+            _save_customer_id_tx(conn, email.lower().strip(), customer_id)
         return "customer_linked"
 
     if etype in ("customer.subscription.created", "customer.subscription.updated",
                  "customer.subscription.deleted"):
         customer_id = obj.get("customer")
-        email = get_email_for_customer(customer_id) or (obj.get("metadata") or {}).get("email")
+        email = _get_email_for_customer_tx(conn, customer_id) or (obj.get("metadata") or {}).get("email")
         if not email:
             return "no_email_mapping"
-        applied = _upsert_subscription(obj, email.lower().strip(), created)
+        applied = _upsert_subscription_tx(conn, obj, email.lower().strip(), created)
         return "applied" if applied else "stale_ignored"
 
     return "ignored"
+
+
+def process_webhook_event(event):
+    """Atomically dedupe-and-apply one verified Stripe event in a single
+    transaction: the dedupe marker and the entitlement change either both
+    commit or both roll back. If this raises, nothing was persisted —
+    including no dedupe row — so Stripe's retry of the same event id will
+    genuinely reprocess it rather than being silently swallowed as a
+    duplicate on the next delivery attempt. Returns a short status string.
+    """
+    # verify_webhook() returns a real stripe.Event (a StripeObject): it
+    # supports event["key"] subscripting but raises AttributeError on
+    # .get(...) by design (it wants an explicit .to_dict() first). Normalize
+    # once here so the rest of this function can use plain dict semantics
+    # for both real Stripe objects and the plain dicts used in tests.
+    if hasattr(event, "to_dict"):
+        event = event.to_dict()
+
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM stripe_webhook_events WHERE event_id=?", (event["id"],)).fetchone():
+            conn.rollback()
+            return "duplicate_ignored"
+        result = _dispatch_tx(conn, event)
+        conn.execute("INSERT INTO stripe_webhook_events (event_id, type) VALUES (?, ?)",
+                     (event["id"], event["type"]))
+        conn.commit()
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ── Reads (server-side enforcement) ───────────────────────────────────────

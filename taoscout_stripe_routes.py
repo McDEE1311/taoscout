@@ -4,7 +4,7 @@
 Exec'd into api.py's namespace (see the `from taoscout_stripe import (...)` +
 exec(...) block in api.py), mirroring taoscout_routes.py's pattern. Relies on
 names already present in that namespace: app, HTTPException, Cookie, Form,
-Optional, RedirectResponse, HTMLResponse, verify_session (from taoscout_auth),
+Optional, RedirectResponse, HTMLResponse, verify_identity (from taoscout_auth),
 plus everything imported from taoscout_stripe just before this file runs.
 """
 from fastapi import Request as _StripeRequest
@@ -16,7 +16,7 @@ async def require_pro(session: Optional[str] = Cookie(default=None)):
     current vs. delayed market research) to depend on directly."""
     if not session:
         raise HTTPException(status_code=401, detail="Login required")
-    user = verify_session(session)
+    user = verify_identity(session)
     if not user:
         raise HTTPException(status_code=401, detail="Session expired")
     if not get_entitlement(user["email"])["pro"]:
@@ -28,7 +28,7 @@ async def require_pro(session: Optional[str] = Cookie(default=None)):
 async def billing_page(session: Optional[str] = Cookie(default=None)):
     if not session:
         return RedirectResponse(url="/login", status_code=302)
-    user = verify_session(session)
+    user = verify_identity(session)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
     ent = get_entitlement(user["email"])
@@ -60,7 +60,7 @@ a{{color:#00d4ff;text-decoration:none}}</style></head>
 async def billing_status(session: Optional[str] = Cookie(default=None)):
     if not session:
         raise HTTPException(status_code=401, detail="Not logged in")
-    user = verify_session(session)
+    user = verify_identity(session)
     if not user:
         raise HTTPException(status_code=401, detail="Session expired")
     return get_entitlement(user["email"])
@@ -70,7 +70,7 @@ async def billing_status(session: Optional[str] = Cookie(default=None)):
 async def billing_checkout(plan: str = Form(...), session: Optional[str] = Cookie(default=None)):
     if not session:
         return RedirectResponse(url="/login", status_code=302)
-    user = verify_session(session)
+    user = verify_identity(session)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
     if not STRIPE_ENABLED:
@@ -86,7 +86,7 @@ async def billing_checkout(plan: str = Form(...), session: Optional[str] = Cooki
 async def billing_portal(session: Optional[str] = Cookie(default=None)):
     if not session:
         return RedirectResponse(url="/login", status_code=302)
-    user = verify_session(session)
+    user = verify_identity(session)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
     try:
@@ -128,11 +128,13 @@ async def stripe_webhook(request: _StripeRequest):
         event = verify_webhook(payload, sig_header)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid signature")
-    if not claim_webhook_event(event["id"], event["type"]):
-        return {"status": "duplicate_ignored"}
     try:
-        result = handle_event(event)
+        # Dedupe and entitlement changes are applied atomically: a failure
+        # here rolls back everything (including the dedupe marker), so
+        # Stripe's retry of the same event id genuinely reprocesses it
+        # instead of being silently swallowed as a duplicate.
+        result = process_webhook_event(event)
     except Exception as e:
         print(f"[STRIPE WEBHOOK] error processing {event['id']}: {e}")
-        raise HTTPException(status_code=500, detail="Processing error")
+        raise HTTPException(status_code=500, detail="Processing error")  # Stripe will retry
     return {"status": result}

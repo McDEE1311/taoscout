@@ -567,16 +567,19 @@ if CFG.get("market_research_enabled", False):
 # ── TaoScout Stripe Billing Routes (Free/Pro) ─────────────────────────────────
 # Isolated from the TAO payment system above: separate tables, separate
 # expiration worker. Disabled automatically until STRIPE_SECRET_KEY and
-# STRIPE_WEBHOOK_SECRET are configured.
+# STRIPE_WEBHOOK_SECRET are configured — and, while disabled, this block
+# causes no database or background-worker side effects at all.
 try:
+    from taoscout_auth import verify_identity
     from taoscout_stripe import (
         STRIPE_ENABLED, get_entitlement, has_pro,
         create_checkout_session, create_billing_portal_session,
-        verify_webhook, handle_event, claim_webhook_event,
+        verify_webhook, process_webhook_event,
         start_stripe_reconciler,
     )
     exec(open(str(SCRIPT_DIR / "taoscout_stripe_routes.py")).read())
-    start_stripe_reconciler(interval_seconds=3600)
+    if STRIPE_ENABLED:
+        start_stripe_reconciler(interval_seconds=3600)
     print(f"TaoScout Stripe billing routes loaded (enabled={STRIPE_ENABLED})")
 except Exception as e:
     import traceback
