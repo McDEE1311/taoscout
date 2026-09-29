@@ -10,7 +10,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 BASE_DIR  = Path(__file__).parent
-DB_PATH   = BASE_DIR / "data" / "taoscout_users.db"
 ENV_FILE  = BASE_DIR / ".env"
 
 def load_env():
@@ -25,6 +24,11 @@ def load_env():
     return env
 
 ENV = load_env()
+
+# TAOSCOUT_USERS_DB lets tests/tooling point this module at a database copy
+# without ever touching the live file — init_db() below runs unconditionally
+# at import time.
+DB_PATH = Path(ENV.get("TAOSCOUT_USERS_DB", str(BASE_DIR / "data" / "taoscout_users.db")))
 
 PAYMENT_ADDRESS = ENV.get("TAOSCOUT_PAYMENT_ADDRESS", "5GWF2n8PGg1hgcM7KEvJohHmEgtK8Mr1Qarm4MedXfGtwcTb")
 BASE_URL        = ENV.get("BASE_URL", "https://app.taoscout.com")
@@ -94,7 +98,9 @@ def init_db():
             renewed_at TEXT,
             setup_token TEXT,
             token_expires TEXT,
-            token_used INTEGER DEFAULT 0
+            token_used INTEGER DEFAULT 0,
+            reminder_7d_sent INTEGER DEFAULT 0,
+            reminder_1d_sent INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS orders (
@@ -143,6 +149,17 @@ def init_db():
             subject TEXT,
             sent_at TEXT DEFAULT (datetime('now')),
             status TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS user_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT,
+            event TEXT NOT NULL,
+            path TEXT,
+            metadata TEXT,
+            ip TEXT,
+            user_agent TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
         );
     """)
     conn.commit()

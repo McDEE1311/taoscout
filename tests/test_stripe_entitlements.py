@@ -31,9 +31,13 @@ _TEST_DB = _TEST_DIR / "taoscout_users_test.db"
 _LIVE_DB = BASE_DIR / "data" / "taoscout_users.db"
 if _LIVE_DB.exists():
     shutil.copy2(_LIVE_DB, _TEST_DB)
+# Both modules' init_db() runs unconditionally at import time; redirecting
+# both env vars *before* either import means neither one can ever create or
+# touch a file at the real default path (data/taoscout_users.db).
 os.environ["TAOSCOUT_STRIPE_DB"] = str(_TEST_DB)
+os.environ["TAOSCOUT_USERS_DB"] = str(_TEST_DB)
 
-import taoscout_stripe as ts  # noqa: E402  (import must follow the env override above)
+import taoscout_stripe as ts  # noqa: E402  (import must follow the env overrides above)
 import taoscout_auth as ta  # noqa: E402  (only used for the cross-isolation test)
 
 TEST_WEBHOOK_SECRET = "whsec_test_secret_for_unit_tests_only"
@@ -112,6 +116,30 @@ class TestMigrationSafety(StripeIsolationSetup):
         self.assertIn("stripe_customers", tables)
         self.assertIn("stripe_entitlements", tables)
         self.assertIn("stripe_webhook_events", tables)
+
+    def test_fresh_disaster_recovery_bootstrap_supports_tao_worker_and_event_log(self):
+        """init_db() must be able to bootstrap a brand-new, empty database
+        (disaster recovery / new deploy) well enough for the TAO expiration
+        worker and event logging to run without error. Regression test for a
+        gap found while testing this migration on a copy: reminder_7d_sent/
+        reminder_1d_sent and the user_events table existed only via ad hoc
+        ALTER TABLEs against production and were missing from init_db()."""
+        fresh_path = _TEST_DIR / f"fresh_{self._testMethodName}.db"
+        if fresh_path.exists():
+            fresh_path.unlink()
+        ta.DB_PATH = fresh_path
+        ts.DB_PATH = fresh_path
+        ta.init_db()
+        ts.init_db()
+
+        ta.log_user_event("new@example.com", "login_success", path="/login")
+        ta.check_expirations()  # must not raise OperationalError on a fresh schema
+
+        conn = sqlite3.connect(str(fresh_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM user_events WHERE email='new@example.com'").fetchone()
+        conn.close()
+        self.assertEqual(row["event"], "login_success")
 
 
 class TestWebhookSecurity(StripeIsolationSetup):
