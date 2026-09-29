@@ -192,3 +192,13 @@ synthetic and assert accounting/control behavior, not trading profitability.
    preview exposes its whole record and is not the future paywall.
 6. Review the actual product/claims, then approve production rollout and charging.
    No live trading, billing, or paid advertising has been enabled by this PR.
+
+## Validation limits in this recovery session
+
+The engine and HTTP suite passed all 24 tests; Python compilation and JavaScript
+syntax checks passed. A browser-render check was attempted, but this environment
+had no browser binary and its browser download failed. Visual layout, actual
+service-worker/offline behavior, and mobile installation therefore still need
+staging/device verification. The legacy Bittensor runtime and rig database were
+not available here, so the optional mount was tested using an isolated FastAPI
+parent rather than starting the production operator stack.
