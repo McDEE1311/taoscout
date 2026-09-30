@@ -95,13 +95,13 @@ async def login_page():
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_submit(email: str = Form(...), pin: str = Form(...)):
+    # Identity check only — no TAO subscription_status/expires_at filter.
+    # Login authenticates who you are; product-specific access (the TAO
+    # dashboard/account pages via verify_session(), Stripe billing via
+    # verify_identity()) is enforced separately by each surface, not here.
     email = email.strip().lower()
     conn = get_conn()
-    user = conn.execute("""
-        SELECT * FROM users WHERE email=?
-        AND subscription_status='active'
-        AND datetime(expires_at) > datetime('now')
-    """, (email,)).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
     conn.close()
     if not user or not user["pin_hash"]:
         return HTMLResponse(_login_html("Invalid email or PIN."))
@@ -123,6 +123,22 @@ async def logout(session: Optional[str] = Cookie(default=None)):
     resp = RedirectResponse(url="/login", status_code=302)
     resp.delete_cookie("session")
     return resp
+
+# ── Registration (Free / Stripe accounts — no TAO payment required) ───────────
+@app.get("/register", response_class=HTMLResponse)
+async def register_page():
+    return HTMLResponse(_register_html())
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_submit(email: str = Form(...)):
+    email = email.strip().lower()
+    if not _re.match(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$', email):
+        return HTMLResponse(_register_html("Invalid email address."))
+    try:
+        result = register_account(email)
+    except Exception as e:
+        return HTMLResponse(_register_html(f"Registration failed: {e}"))
+    return HTMLResponse(_register_sent_html(result))
 
 # ── Setup (PIN creation — only after payment confirmed) ───────────────────────
 @app.get("/setup", response_class=HTMLResponse)
@@ -433,6 +449,45 @@ button{{background:#00d4ff;color:#000;border:none;padding:14px;border-radius:6px
 <button type="submit">Login →</button>
 </form>
 <div class="links"><a href="/">← TaoScout.com</a></div>
+</div></body></html>"""
+
+def _register_html(error=""):
+    err = f'<p style="color:#ff4444;font-size:13px;margin-bottom:1rem">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TaoScout — Create Account</title>
+<style>*{{box-sizing:border-box}}body{{background:#0a0a0a;color:#e0e0e0;font-family:'Courier New',monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1rem}}
+.card{{background:#111;border:1px solid #1e1e2e;border-radius:12px;padding:2.5rem;width:100%;max-width:360px}}
+.logo{{color:#00d4ff;font-size:20px;font-weight:700;letter-spacing:2px;margin-bottom:4px}}
+.sub{{color:#555;font-size:11px;margin-bottom:2rem}}
+label{{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px}}
+input{{background:#0a0a0a;border:1px solid #2a2a3e;color:#e0e0e0;padding:12px;border-radius:6px;width:100%;font-family:'Courier New',monospace;font-size:14px;outline:none;margin-bottom:1rem}}
+input:focus{{border-color:#00d4ff}}
+button{{background:#00d4ff;color:#000;border:none;padding:14px;border-radius:6px;width:100%;font-family:'Courier New',monospace;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:1px}}
+.links{{text-align:center;margin-top:1rem;font-size:12px;color:#555}}
+.links a{{color:#00d4ff;text-decoration:none}}</style>
+</head><body><div class="card">
+<div class="logo">TAOSCOUT</div>
+<div class="sub">Create a free account</div>
+{err}
+<form method="post" action="/register">
+<label>Email</label>
+<input type="email" name="email" placeholder="your@email.com" required autofocus />
+<button type="submit">Create Account →</button>
+</form>
+<div class="links"><a href="/login">Already have an account? Log in</a></div>
+</div></body></html>"""
+
+def _register_sent_html(result):
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>TaoScout — Check Your Email</title>
+<style>body{{background:#0a0a0a;color:#e0e0e0;font-family:'Courier New',monospace;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.card{{background:#111;border:1px solid #1e1e2e;border-radius:12px;padding:2rem;max-width:400px;text-align:center}}
+a{{color:#00d4ff;text-decoration:none}}</style></head><body><div class="card">
+<div style="color:#00d4ff;font-size:20px;font-weight:700;margin-bottom:1rem">TAOSCOUT</div>
+<p>Check your email ({result['email']}) for a link to create your PIN.</p>
+<p style="font-size:12px;color:#555;margin-top:1rem">Roster: {result['roster_num']}</p>
+<p style="margin-top:1rem"><a href="/login">← Back to login</a></p>
 </div></body></html>"""
 
 def _setup_html(token, email, roster_num, plan_name):

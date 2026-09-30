@@ -753,6 +753,84 @@ def create_trial_user(email: str, trial_days: int = 3, source: str = "landing_tr
     }
 
 
+def send_account_setup_email(email: str, token: str, roster_num: str):
+    """Setup email for a direct Free/Stripe account registration — no TAO
+    trial-length or plan copy, unlike send_trial_setup_email above."""
+    setup_url = f"{BASE_URL}/setup?token={token}"
+    subject = "TaoScout — Create Your Access PIN"
+    html = f"""
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+<h2 style="color:#0a0a0a">Welcome to TaoScout</h2>
+<p>Create your PIN to finish setting up your account.</p>
+<p style="margin:24px 0">
+  <a href="{setup_url}" style="background:#00d4ff;color:#000;padding:12px 24px;
+     text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">
+     Create Your PIN →
+  </a>
+</p>
+<p style="color:#555;font-size:13px">Or paste this link: {setup_url}</p>
+<p style="color:#aaa;font-size:11px;margin-top:30px">Roster number: {roster_num}</p>
+</div>
+"""
+    text = f"Welcome to TaoScout.\n\nCreate your PIN here: {setup_url}\n\nRoster number: {roster_num}"
+    return send_email(email, subject, html, text)
+
+
+def register_account(email: str) -> dict:
+    """Create a Free-tier account (no TAO payment involved) and send a setup
+    link, or resend one if the account exists but has no PIN yet. Unlike
+    create_trial_user(), this sets no expires_at and leaves role='free'/
+    subscription_status='inactive' — it grants login/identity only.
+    verify_session() (TAO-gated endpoints) still requires an active,
+    unexpired TAO subscription regardless of this account's existence;
+    verify_identity() (Stripe/billing) only needs a valid session, which
+    this account can obtain once its PIN is set via the existing /setup
+    flow — no TAO-specific gate involved at any step here."""
+    email = email.lower().strip()
+    conn = get_conn()
+    user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    setup_token   = secrets.token_urlsafe(32)
+    token_expires = (datetime.now(timezone.utc) + timedelta(hours=72)).isoformat()
+
+    if not user:
+        roster_num = generate_roster_num()
+        conn.execute("""
+            INSERT INTO users (roster_num, email, role, plan_id, plan_name, status,
+                subscription_status, source, setup_token, token_expires)
+            VALUES (?, ?, 'free', 'free_account', 'Free', 'pending_setup',
+                'inactive', 'free_signup', ?, ?)
+        """, (roster_num, email, setup_token, token_expires))
+        conn.commit()
+        conn.close()
+        send_account_setup_email(email, setup_token, roster_num)
+        return {"status": "account_created", "email": email, "roster_num": roster_num}
+
+    roster_num = user["roster_num"]
+    pin_hash = user["pin_hash"] if "pin_hash" in user.keys() else None
+    if not pin_hash:
+        conn.execute("""
+            UPDATE users SET setup_token=?, token_expires=?, token_used=0
+            WHERE email=?
+        """, (setup_token, token_expires, email))
+        conn.commit()
+        conn.close()
+        send_account_setup_email(email, setup_token, roster_num)
+        return {"status": "setup_link_resent", "email": email, "roster_num": roster_num}
+
+    conn.close()
+    subject = "TaoScout — You Already Have Access"
+    html = f"""<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+<h2>You already have a TaoScout account</h2>
+<p>Roster number: <strong>{roster_num}</strong></p>
+<p style="margin:24px 0">
+  <a href="{BASE_URL}/login" style="background:#00d4ff;color:#000;padding:12px 24px;
+     text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">Log In →</a>
+</p></div>"""
+    text = f"You already have a TaoScout account.\n\nRoster: {roster_num}\n\nLog in: {BASE_URL}/login"
+    send_email(email, subject, html, text)
+    return {"status": "already_active", "email": email, "roster_num": roster_num}
+
+
 
 def log_user_event(email: str, event: str, path: str = None, metadata: str = None, ip: str = None, ua: str = None):
     """Log a user activity event to user_events table."""

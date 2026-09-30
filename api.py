@@ -543,7 +543,7 @@ async def alpha_signals_endpoint(min_relevance: int = 40, key: str = Depends(ver
 try:
     from taoscout_auth import (
         PLANS, create_order, confirm_order, verify_pin, hash_pin,
-        create_session, verify_session, delete_session,
+        create_session, verify_session, delete_session, register_account,
         start_payment_watcher, start_expiration_checker,
         check_pending_payments, get_conn, ENV, PAYMENT_ADDRESS,
         create_invite, use_invite, get_order_status
