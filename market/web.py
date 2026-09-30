@@ -7,7 +7,7 @@ import sqlite3
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from .engine import timestamp
-from .ledger import history
+from .ledger import history, latest_id
 
 STATIC = Path(__file__).parent / "static"
 
@@ -46,18 +46,26 @@ def create_app(ledger=None, report=None, resolve_pro=None):
     def records(request: Request, before: int | None = Query(default=None, ge=1),
                 limit: int = Query(default=100, ge=1, le=500)):
         try:
-            result = history(ledger, limit=limit, before=before)
+            is_pro = bool(resolve_pro(request)) if resolve_pro else True
+            # Eligibility is computed server-side from the ledger itself,
+            # never from the caller-supplied `before` cursor: a Free caller
+            # cannot see the single newest record no matter what value of
+            # `before` they send (including one larger than the newest id).
+            # This is enforced inside history()'s own WHERE clause, before
+            # LIMIT is applied — not by slicing the result afterward.
+            max_id = None
+            if not is_pro:
+                newest_id = latest_id(ledger)
+                if newest_id is not None:
+                    max_id = newest_id - 1
+            result = history(ledger, limit=limit, before=before, max_id=max_id)
+            # Freshness is calculated from the records actually returned
+            # (post-eligibility-filter), so a Free caller's `stale` flag
+            # never reveals how recent the withheld record is.
             newest = result["records"][0] if result["records"] else None
             result["stale"] = not newest or (datetime.now(timezone.utc) - timestamp(newest["published_at"])).total_seconds() > 9 * 3600
-            is_pro = bool(resolve_pro(request)) if resolve_pro else True
             result["delayed"] = not is_pro
-            # Only the first page (no pagination cursor) can ever contain
-            # the single globally-newest slot, so only it is redacted —
-            # stripping index 0 of every page would instead lose one record
-            # per page as a Free caller paginates, which both over-redacts
-            # and is inconsistent depending on their chosen page size.
-            if not is_pro and before is None and result["records"]:
-                result["records"] = result["records"][1:]
+            if not is_pro:
                 result["notice"] = ("Free tier: the most recently published slot is withheld. "
                                      "Upgrade to Pro for current research. " + result.get("notice", "")).strip()
             return result
