@@ -74,7 +74,26 @@ def publish(path, bars, source, now=None):
         conn.close()
 
 
-def history(path, limit=500, before=None):
+def latest_id(path):
+    """The highest record id currently in the ledger, or None if empty.
+    Read-only. Used to compute an eligibility ceiling (e.g. for a Free
+    tier) independently of any caller-supplied pagination cursor."""
+    if not Path(path).exists():
+        return None
+    conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        row = conn.execute("SELECT MAX(id) FROM research").fetchone()
+        return row[0]
+    finally:
+        conn.close()
+
+
+def history(path, limit=500, before=None, max_id=None):
+    """max_id, if given, caps every row returned to id <= max_id — enforced
+    in this query's WHERE clause, so no value of `before` (however large a
+    caller supplies) can ever return a row above it. Pass the result of
+    latest_id() minus however many of the newest rows should stay withheld;
+    never derive this ceiling from a caller-supplied parameter."""
     if not Path(path).exists():
         return {"records": [], "next_before": None, "integrity": "empty",
                 "notice": "No forward research has been published."}
@@ -83,8 +102,11 @@ def history(path, limit=500, before=None):
     conn.row_factory = sqlite3.Row
     try:
         limit = max(1, min(int(limit), 500))
+        ceiling = before if before is not None else 9223372036854775807
+        if max_id is not None:
+            ceiling = min(ceiling, max_id + 1)
         rows = conn.execute("SELECT * FROM research WHERE id < ? ORDER BY id DESC LIMIT ?",
-                            (before if before is not None else 9223372036854775807, limit + 1)).fetchall()
+                            (ceiling, limit + 1)).fetchall()
         selected = rows[:limit]
         for row in selected:
             predecessor = conn.execute("SELECT record_hash FROM research WHERE id < ? ORDER BY id DESC LIMIT 1",
