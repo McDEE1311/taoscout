@@ -556,12 +556,28 @@ except Exception as e:
     traceback.print_exc()
 
 # Optional public research preview. Disabled unless explicitly configured.
-# Customer auth/Stripe are intentionally not inferred from operator API keys.
+# Free/Pro gating is wired to the real Stripe entitlement (identity via
+# verify_identity, entitlement via has_pro — NOT the TAO-gated
+# verify_session): a Free caller with no session, an expired session, or no
+# active Stripe subscription all resolve to is_pro=False, never raising.
+def _market_resolve_pro(request):
+    try:
+        session_token = request.cookies.get("session")
+        if not session_token:
+            return False
+        user = verify_identity(session_token)
+        if not user:
+            return False
+        return has_pro(user["email"])
+    except Exception:
+        return False
+
 if CFG.get("market_research_enabled", False):
     from market.web import create_app as create_market_app
     app.mount("/market", create_market_app(
         ledger=CFG.get("market_ledger_path", str(SCRIPT_DIR / "data" / "market-research.db")),
         report=CFG.get("market_report_path"),
+        resolve_pro=_market_resolve_pro,
     ))
 
 # ── TaoScout Stripe Billing Routes (Free/Pro) ─────────────────────────────────
