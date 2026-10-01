@@ -52,7 +52,7 @@ async def billing_page(session: Optional[str] = Cookie(default=None)):
 <style>body{{background:#0a0a0a;color:#e0e0e0;font-family:'Courier New',monospace;padding:2rem;max-width:480px;margin:0 auto}}
 button{{background:#00d4ff;color:#000;border:none;padding:12px 20px;border-radius:6px;font-weight:700;cursor:pointer;width:100%;font-family:inherit}}
 a{{color:#00d4ff;text-decoration:none}}</style></head>
-<body><h1 style="color:#00d4ff">Billing</h1>{body}<p style="margin-top:1.5rem"><a href="/dashboard">← Dashboard</a></p>
+<body><h1 style="color:#00d4ff">Billing</h1>{body}<p style="margin-top:1.5rem"><a href="/account">← Account</a></p>
 </body></html>""")
 
 

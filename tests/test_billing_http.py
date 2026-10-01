@@ -202,7 +202,7 @@ class TestRealRegistrationAndLogin(BillingHTTPTestBase):
         # with no session/PIN bypass of any kind.
         login_resp = self.login_via_http(email, "111222")
         self.assertEqual(login_resp.status_code, 302, login_resp.text)
-        self.assertEqual(login_resp.headers["location"], "/dashboard")
+        self.assertEqual(login_resp.headers["location"], "/account")
         self.assertIn("session", login_resp.cookies)
 
         # That session is real: verify_identity() accepts it immediately.
@@ -232,7 +232,7 @@ class TestRealRegistrationAndLogin(BillingHTTPTestBase):
 
         login_resp = self.login_via_http(email, "445566")
         self.assertEqual(login_resp.status_code, 302, login_resp.text)
-        self.assertEqual(login_resp.headers["location"], "/dashboard",
+        self.assertEqual(login_resp.headers["location"], "/account",
                           "login itself must succeed regardless of TAO subscription status")
         self.assertIn("session", login_resp.cookies)
 
@@ -381,6 +381,124 @@ class TestFullSignupCheckoutWebhookCancellationFlow(BillingHTTPTestBase):
         header = sign_payload(payload, "wrong_secret")
         resp = self.client.post("/stripe/webhook", content=payload, headers={"stripe-signature": header})
         self.assertEqual(resp.status_code, 400)
+
+
+class TestCustomerNavigation(BillingHTTPTestBase):
+    """Covers Free, TAO-only, Stripe-only, and expired-TAO users following
+    the ACTUAL registration/setup/login redirects. Every test here uses the
+    TestClient's own cookie jar — no test reads a Set-Cookie value and
+    passes it back manually; `follow_redirects=True` lets each request
+    land wherever the real route actually sends it, and later requests on
+    the same client carry the session automatically."""
+
+    def new_client(self):
+        # https base_url, not the TestClient default of http://testserver:
+        # the real session cookie is set with secure=True, so a plain-http
+        # client would silently receive-but-never-resend it across a
+        # redirect, making every multi-hop "follow the real redirect" test
+        # look like a fresh, unauthenticated request. This is the one
+        # thing that makes those tests actually exercise what a real
+        # (HTTPS-served) browser session would do.
+        return TestClient(build_full_app(), base_url="https://testserver")
+
+    def register_setup(self, client, email, pin):
+        resp = client.post("/register", data={"email": email})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        matches = [e for e in self.sent_emails if e["to"] == email]
+        self.assertTrue(matches, f"no setup email was sent to {email}")
+        m = re.search(r"token=([\w-]+)", matches[-1]["html"])
+        self.assertIsNotNone(m)
+        token = m.group(1)
+        return client.post("/setup", data={"token": token, "pin": pin, "pin_confirm": pin},
+                            follow_redirects=True)
+
+    def test_free_user_lands_on_a_working_account_page_after_setup(self):
+        client = self.new_client()
+        resp = self.register_setup(client, "freejourney@example.com", "111111")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(str(resp.url).endswith("/account"), resp.url)
+        self.assertIn("No active TAO plan", resp.text)
+        self.assertIn("Billing", resp.text)
+
+        # No manual cookie passing anywhere below: the client's own jar,
+        # populated by the real /setup redirect above, carries the session.
+        billing_resp = client.get("/billing", follow_redirects=True)
+        self.assertEqual(billing_resp.status_code, 200)
+        self.assertIn("Free plan", billing_resp.text)
+        self.assertIn("Upgrade", billing_resp.text)
+
+        # Enforce server-side: a Free user must not get the real dashboard.
+        dash_resp = client.get("/dashboard", follow_redirects=True)
+        self.assertEqual(dash_resp.status_code, 200)
+        self.assertNotIn("TAOSCOUT_USER", dash_resp.text, "a Free user must not receive real dashboard content")
+        self.assertIn("/account", dash_resp.text, "the no-TAO-access page should still link back to /account")
+
+    def test_free_user_can_really_log_in_again_on_a_fresh_client(self):
+        setup_client = self.new_client()
+        self.register_setup(setup_client, "relogin@example.com", "222222")
+
+        # A brand-new client/cookie jar — proves this is an independent,
+        # real login, not a reused setup session.
+        login_client = self.new_client()
+        resp = login_client.post("/login", data={"email": "relogin@example.com", "pin": "222222"},
+                                  follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(str(resp.url).endswith("/account"), resp.url)
+        self.assertIn("relogin@example.com", resp.text)
+
+    def test_tao_only_user_reaches_dashboard_and_billing_shows_free(self):
+        self.make_tao_user_with_pin("taoonly@example.com", "TS0200", "333333",
+                                     role="operator", subscription_status="active",
+                                     expires_at="2099-01-01T00:00:00+00:00")
+        client = self.new_client()
+        resp = client.post("/login", data={"email": "taoonly@example.com", "pin": "333333"},
+                            follow_redirects=True)
+        self.assertTrue(str(resp.url).endswith("/account"), resp.url)
+        self.assertIn("Go to Dashboard", resp.text)
+
+        dash_resp = client.get("/dashboard", follow_redirects=True)
+        self.assertEqual(dash_resp.status_code, 200)
+        self.assertIn("TAOSCOUT_USER", dash_resp.text, "an active TAO user's existing dashboard access must be preserved")
+
+        billing_resp = client.get("/billing", follow_redirects=True)
+        self.assertIn("Free plan", billing_resp.text, "TAO access must not imply Stripe Pro")
+
+    def test_stripe_only_user_reaches_billing_but_dashboard_stays_locked(self):
+        client = self.new_client()
+        self.register_setup(client, "stripeonlynav@example.com", "444444")
+        ts.save_customer_id("stripeonlynav@example.com", "cus_navso")
+        future = int(time.time()) + 30 * 86400
+        sub = make_subscription("sub_navso", "cus_navso", "active", future)
+        payload = json.dumps(make_event("evt_navso", "customer.subscription.created", sub, created=1000)).encode()
+        header = sign_payload(payload, TEST_WEBHOOK_SECRET)
+        client.post("/stripe/webhook", content=payload, headers={"stripe-signature": header})
+
+        billing_resp = client.get("/billing", follow_redirects=True)
+        self.assertEqual(billing_resp.status_code, 200)
+        self.assertIn("Manage Billing", billing_resp.text)
+        self.assertNotIn("Upgrade", billing_resp.text, "an already-Pro caller should see billing controls, not upgrade buttons")
+
+        # The key enforcement check: Stripe Pro must NOT unlock the TAO dashboard.
+        dash_resp = client.get("/dashboard", follow_redirects=True)
+        self.assertNotIn("TAOSCOUT_USER", dash_resp.text, "Stripe Pro must not unlock TAO dashboard features")
+
+    def test_expired_tao_user_loses_dashboard_but_keeps_account_and_billing(self):
+        self.make_tao_user_with_pin("expirednav@example.com", "TS0201", "555555",
+                                     role="operator", subscription_status="expired",
+                                     expires_at="2020-01-01T00:00:00+00:00")
+        client = self.new_client()
+        resp = client.post("/login", data={"email": "expirednav@example.com", "pin": "555555"},
+                            follow_redirects=True)
+        self.assertTrue(str(resp.url).endswith("/account"), resp.url)
+        self.assertIn("No active TAO plan", resp.text)
+
+        dash_resp = client.get("/dashboard", follow_redirects=True)
+        self.assertNotIn("TAOSCOUT_USER", dash_resp.text, "expired TAO access must not reach the real dashboard")
+
+        # Billing controls remain fully reachable despite expired TAO.
+        billing_resp = client.get("/billing", follow_redirects=True)
+        self.assertEqual(billing_resp.status_code, 200)
+        self.assertIn("Upgrade", billing_resp.text)
 
 
 if __name__ == "__main__":

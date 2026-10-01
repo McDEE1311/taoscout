@@ -113,7 +113,7 @@ async def login_submit(email: str = Form(...), pin: str = Form(...)):
         log_user_event(email, "login_success", path="/login")
     except Exception:
         pass
-    resp  = RedirectResponse(url="/dashboard", status_code=302)
+    resp  = RedirectResponse(url="/account", status_code=302)
     resp.set_cookie("session", token, httponly=True, secure=True, max_age=86400)
     return resp
 
@@ -181,7 +181,7 @@ async def setup_submit(token: str = Form(...), pin: str = Form(...), pin_confirm
     except Exception:
         pass
     sess = create_session(user["email"])
-    resp = RedirectResponse(url="/dashboard", status_code=302)
+    resp = RedirectResponse(url="/account", status_code=302)
     resp.set_cookie("session", sess, httponly=True, secure=True, max_age=86400)
     return resp
 
@@ -262,18 +262,54 @@ window.TAOSCOUT_USER = {{
     content = content.replace("</head>", inject + "</head>")
     return HTMLResponse(content)
 
-# ── Account ───────────────────────────────────────────────────────────────────
+# ── Account (universal landing — identity only, not TAO-gated) ────────────────
+# Every logged-in user reaches this page regardless of TAO/Stripe status: it
+# is the one place that must work for Free, TAO-only, Stripe-only, and
+# expired-TAO users alike. It shows TAO status (if any) and links to the
+# TAO dashboard only when TAO is actually active, and always links to
+# /billing for Stripe/Pro status and controls. It never grants dashboard
+# access itself — that stays enforced by verify_session() at /dashboard.
 @app.get("/account", response_class=HTMLResponse)
 async def account_page(session: Optional[str] = Cookie(default=None)):
     if not session:
         return RedirectResponse(url="/login", status_code=302)
-    user = verify_session(session)
-    if not user:
+    identity = verify_identity(session)
+    if not identity:
         return RedirectResponse(url="/login", status_code=302)
-    plans_opts = "".join([
-        f'<option value="{pid}">{p["name"]} — {p["base_tao"]} TAO / {p["days"]} days</option>'
-        for pid, p in PLANS.items() if pid != "influencer_trial"
-    ])
+    email = identity["email"]
+
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    conn.close()
+
+    from datetime import datetime, timezone
+    tao_active = bool(row) and row["subscription_status"] == "active" \
+        and row["expires_at"] and row["expires_at"] > datetime.now(timezone.utc).isoformat()
+
+    if tao_active:
+        plans_opts = "".join([
+            f'<option value="{pid}">{p["name"]} — {p["base_tao"]} TAO / {p["days"]} days</option>'
+            for pid, p in PLANS.items() if pid != "influencer_trial"
+        ])
+        tao_section = f"""<div class="card">
+<h3 style="margin-bottom:1rem;font-size:15px;color:#00d4ff">TAO Plan</h3>
+<div class="row"><span class="lbl">Plan</span><span>{row['plan_name'] or '—'}</span></div>
+<div class="row"><span class="lbl">Expires</span><span>{(row['expires_at'] or '')[:10]}</span></div>
+<p style="margin-top:1rem"><a href="/dashboard">Go to Dashboard →</a></p>
+<h4 style="margin:1.5rem 0 0.5rem;font-size:13px;color:#888">Renew / Upgrade</h4>
+<form method="post" action="/order-form">
+<select name="plan_id">{plans_opts}</select>
+<p style="font-size:11px;color:#555;margin:8px 0">You'll receive payment instructions by email</p>
+<button type="submit">Get Payment Instructions</button>
+</form>
+</div>"""
+    else:
+        tao_section = """<div class="card">
+<h3 style="margin-bottom:1rem;font-size:15px;color:#00d4ff">TAO Plan</h3>
+<p style="color:#888">No active TAO plan.</p>
+<p><a href="/">View TAO plans →</a></p>
+</div>"""
+
     return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>TaoScout Account</title>
 <style>*{{box-sizing:border-box}}body{{background:#0a0a0a;color:#e0e0e0;font-family:'Courier New',monospace;padding:2rem;max-width:600px;margin:0 auto}}
@@ -285,21 +321,16 @@ a{{color:#00d4ff;text-decoration:none}}</style>
 </head><body>
 <h1>TAOSCOUT</h1>
 <div class="card">
-<div class="row"><span class="lbl">Roster</span><span style="color:#00d4ff">{user['roster_num']}</span></div>
-<div class="row"><span class="lbl">Email</span><span>{user['email']}</span></div>
-<div class="row"><span class="lbl">Plan</span><span>{user.get('plan_name','—')}</span></div>
-<div class="row"><span class="lbl">Role</span><span>{user['role'].upper()}</span></div>
-<div class="row"><span class="lbl">Expires</span><span>{user.get('expires_at','')[:10]}</span></div>
+<div class="row"><span class="lbl">Email</span><span>{email}</span></div>
+{f'<div class="row"><span class="lbl">Roster</span><span style="color:#00d4ff">{row["roster_num"]}</span></div>' if row else ''}
 </div>
+{tao_section}
 <div class="card">
-<h3 style="margin-bottom:1rem;font-size:15px">Renew / Upgrade</h3>
-<form method="post" action="/order-form">
-<select name="plan_id">{plans_opts}</select>
-<p style="font-size:11px;color:#555;margin:8px 0">You'll receive payment instructions by email</p>
-<button type="submit">Get Payment Instructions</button>
-</form>
+<h3 style="margin-bottom:1rem;font-size:15px;color:#00d4ff">Pro / Billing</h3>
+<p style="color:#888">Manage your Stripe-funded Pro access and billing.</p>
+<p><a href="/billing">Billing &amp; Pro Access →</a></p>
 </div>
-<p><a href="/dashboard">← Dashboard</a> &nbsp; <a href="/logout" style="color:#555">Logout</a></p>
+<p><a href="/logout" style="color:#555">Logout</a></p>
 </body></html>""")
 
 @app.get("/order", response_class=HTMLResponse)
@@ -548,5 +579,5 @@ a{{color:#00d4ff;text-decoration:none}}</style></head><body>
 Your access has expired. Renew to continue.
 </div>
 {plans_html}
-<p style="margin-top:1rem;font-size:12px;color:#555"><a href="/logout">Logout</a></p>
+<p style="margin-top:1rem;font-size:12px;color:#555"><a href="/account">My Account</a> &nbsp; <a href="/logout">Logout</a></p>
 </body></html>"""
