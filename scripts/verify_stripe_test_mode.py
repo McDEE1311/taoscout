@@ -108,7 +108,11 @@ def cmd_billing_portal(email):
     print(f"  {url}\n")
 
 
-def cmd_cancel(email):
+def cmd_cancel(email, at_period_end):
+    """Two genuinely different cancellation modes, deliberately not
+    conflated: immediate cancellation must revoke access right away;
+    scheduled (at-period-end) cancellation must retain access until the
+    period actually ends. Verify both, separately."""
     _require_test_mode()
     customer_id = ts.get_customer_id(email)
     if not customer_id:
@@ -120,10 +124,17 @@ def cmd_cancel(email):
         print(f"No active subscription found for {email}.")
         sys.exit(1)
     for sub in subs.data:
-        print(f"Canceling subscription {sub.id} via the real Stripe API (test mode) ...")
-        client.Subscription.cancel(sub.id)
-    print("Canceled. Wait a few seconds for the webhook to arrive (check your forwarder's "
-          "output), then re-run check-entitlement — pro should flip to False.")
+        if at_period_end:
+            print(f"Scheduling subscription {sub.id} to cancel at period end (real Stripe API, test mode) ...")
+            client.Subscription.modify(sub.id, cancel_at_period_end=True)
+            print("Scheduled. Wait for the webhook, then run check-entitlement: pro should still be "
+                  "True and cancel_at_period_end should be True — access must be retained until the "
+                  "period actually ends. This does NOT revoke access now; that's the point of this mode.")
+        else:
+            print(f"Canceling subscription {sub.id} immediately (real Stripe API, test mode) ...")
+            client.Subscription.cancel(sub.id)
+            print("Canceled immediately. Wait a few seconds for the webhook to arrive (check your "
+                  "forwarder's output), then re-run check-entitlement — pro should flip to False now.")
 
 
 def main():
@@ -142,13 +153,16 @@ def main():
 
     p = sub.add_parser("cancel", help="Cancel the customer's active subscription via the real Stripe API")
     p.add_argument("email")
+    p.add_argument("--at-period-end", action="store_true",
+                    help="Schedule cancellation at period end instead of canceling immediately — "
+                         "access must be RETAINED until the period actually ends")
 
     args = parser.parse_args()
     {
         "checkout": lambda: cmd_checkout(args.email, args.plan),
         "check-entitlement": lambda: cmd_check_entitlement(args.email),
         "billing-portal": lambda: cmd_billing_portal(args.email),
-        "cancel": lambda: cmd_cancel(args.email),
+        "cancel": lambda: cmd_cancel(args.email, args.at_period_end),
     }[args.command]()
 
 
