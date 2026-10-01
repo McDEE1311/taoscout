@@ -210,6 +210,31 @@ class TestSubscriptionLifecycle(StripeIsolationSetup):
         ts.process_webhook_event(make_event("evt_c2", "customer.subscription.deleted", canceled_sub, created=2000))
         self.assertFalse(ts.has_pro("cancel@example.com"))
 
+    def test_scheduled_cancellation_at_period_end_retains_access_until_expiry(self):
+        """Distinct from immediate cancellation, above: a customer who
+        schedules cancellation keeps Pro access until the period actually
+        ends. Stripe sends this as a customer.subscription.updated event
+        with status still 'active' but cancel_at_period_end=True — it must
+        NOT be treated as an immediate revocation."""
+        ts.save_customer_id("scheduled@example.com", "cus_scheduled")
+        future = int(time.time()) + 30 * 86400
+        active_sub = make_subscription("sub_scheduled", "cus_scheduled", "active", future)
+        ts.process_webhook_event(make_event("evt_s1", "customer.subscription.created", active_sub, created=1000))
+        self.assertTrue(ts.has_pro("scheduled@example.com"))
+
+        scheduled_sub = make_subscription("sub_scheduled", "cus_scheduled", "active", future,
+                                           cancel_at_period_end=True)
+        ts.process_webhook_event(make_event("evt_s2", "customer.subscription.updated", scheduled_sub, created=2000))
+        ent = ts.get_entitlement("scheduled@example.com")
+        self.assertTrue(ent["pro"], "scheduling cancellation at period end must not revoke access immediately")
+        self.assertTrue(ent["cancel_at_period_end"])
+
+        # Only once Stripe later sends the actual end-of-period event does access end.
+        expired_sub = make_subscription("sub_scheduled", "cus_scheduled", "canceled", future,
+                                         cancel_at_period_end=True)
+        ts.process_webhook_event(make_event("evt_s3", "customer.subscription.deleted", expired_sub, created=3000))
+        self.assertFalse(ts.has_pro("scheduled@example.com"), "access must end once the period actually expires")
+
     def test_out_of_order_event_does_not_regress_state(self):
         ts.save_customer_id("order@example.com", "cus_order")
         future = int(time.time()) + 30 * 86400
