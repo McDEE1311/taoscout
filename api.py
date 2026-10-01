@@ -543,7 +543,7 @@ async def alpha_signals_endpoint(min_relevance: int = 40, key: str = Depends(ver
 try:
     from taoscout_auth import (
         PLANS, create_order, confirm_order, verify_pin, hash_pin,
-        create_session, verify_session, delete_session,
+        create_session, verify_session, verify_identity, delete_session, register_account,
         start_payment_watcher, start_expiration_checker,
         check_pending_payments, get_conn, ENV, PAYMENT_ADDRESS,
         create_invite, use_invite, get_order_status
@@ -563,6 +563,28 @@ if CFG.get("market_research_enabled", False):
         ledger=CFG.get("market_ledger_path", str(SCRIPT_DIR / "data" / "market-research.db")),
         report=CFG.get("market_report_path"),
     ))
+
+# ── TaoScout Stripe Billing Routes (Free/Pro) ─────────────────────────────────
+# Isolated from the TAO payment system above: separate tables, separate
+# expiration worker. Disabled automatically until STRIPE_SECRET_KEY and
+# STRIPE_WEBHOOK_SECRET are configured — and, while disabled, this block
+# causes no database or background-worker side effects at all.
+try:
+    from taoscout_auth import verify_identity
+    from taoscout_stripe import (
+        STRIPE_ENABLED, get_entitlement, has_pro,
+        create_checkout_session, create_billing_portal_session,
+        verify_webhook, process_webhook_event,
+        start_stripe_reconciler,
+    )
+    exec(open(str(SCRIPT_DIR / "taoscout_stripe_routes.py")).read())
+    if STRIPE_ENABLED:
+        start_stripe_reconciler(interval_seconds=3600)
+    print(f"TaoScout Stripe billing routes loaded (enabled={STRIPE_ENABLED})")
+except Exception as e:
+    import traceback
+    print(f"WARNING: TaoScout Stripe billing routes failed to load: {e}")
+    traceback.print_exc()
 
 if __name__ == "__main__":
     import uvicorn
