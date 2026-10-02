@@ -555,6 +555,24 @@ except Exception as e:
     print(f"WARNING: TaoScout auth/payment routes failed to load: {e}")
     traceback.print_exc()
 
+# ── Owner / Complimentary Access ──────────────────────────────────────────────
+# Extends the existing admin (verify_key) and invite mechanisms above rather
+# than creating a new account system. Isolated from both TAO
+# (users.subscription_status/expires_at) and Stripe (stripe_entitlements):
+# owner/complimentary grants live in their own tables and cannot be touched
+# by either system's expiration/cancellation logic.
+try:
+    from taoscout_access import (
+        grant_owner_access, revoke_access, get_access, has_full_access,
+        create_access_invite, revoke_access_invite, redeem_access_invite,
+    )
+    exec(open(str(SCRIPT_DIR / "taoscout_access_routes.py")).read())
+    print("TaoScout owner/complimentary access routes loaded")
+except Exception as e:
+    import traceback
+    print(f"WARNING: TaoScout owner/complimentary access routes failed to load: {e}")
+    traceback.print_exc()
+
 # Optional public research preview. Disabled unless explicitly configured.
 # Free/Pro gating is wired to the real Stripe entitlement (identity via
 # verify_identity, entitlement via has_pro — NOT the TAO-gated
@@ -568,7 +586,7 @@ def _market_resolve_pro(request):
         user = verify_identity(session_token)
         if not user:
             return False
-        return has_pro(user["email"])
+        return has_pro(user["email"]) or has_full_access(user["email"])
     except Exception:
         return False
 

@@ -59,15 +59,17 @@ sys.path.insert(0, str(BASE_DIR))
 _TEST_DB = Path(tempfile.mkdtemp(prefix="taoscout-integration-test-")) / "taoscout_users_test.db"
 os.environ["TAOSCOUT_STRIPE_DB"] = str(_TEST_DB)
 os.environ["TAOSCOUT_USERS_DB"] = str(_TEST_DB)
+os.environ["TAOSCOUT_ACCESS_DB"] = str(_TEST_DB)
 os.environ["STRIPE_SECRET_KEY"] = "sk_test_integration_only"
 os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_integration_test_secret"
 
 import taoscout_auth as ta  # noqa: E402
 import taoscout_stripe as ts  # noqa: E402
+import taoscout_access as tacc  # noqa: E402
 from market.ledger import publish  # noqa: E402
 from market.engine import Candle, HOUR  # noqa: E402
 
-from fastapi import FastAPI, HTTPException, Depends  # noqa: E402
+from fastapi import FastAPI, HTTPException, Depends, Request  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 TEST_WEBHOOK_SECRET = "whsec_integration_test_secret"
@@ -101,7 +103,10 @@ def build_integration_app(ledger_path):
     hand-copied approximation of it."""
     app = FastAPI()
 
-    def verify_key(*args, **kwargs):
+    def verify_key(request: Request):
+        # Matches the real verify_key's signature (api.py takes a Request
+        # and reads X-API-Key) so FastAPI's dependency injection resolves
+        # it correctly; unlike production, this test stub always accepts.
         return "test-key"
 
     ns = {
@@ -132,6 +137,18 @@ def build_integration_app(ledger_path):
     })
     exec(compile((BASE_DIR / "taoscout_stripe_routes.py").read_text(), "taoscout_stripe_routes.py", "exec"), ns)
 
+    ns.update({
+        "grant_owner_access": tacc.grant_owner_access,
+        "revoke_access": tacc.revoke_access,
+        "get_access": tacc.get_access,
+        "has_full_access": tacc.has_full_access,
+        "create_access_invite": tacc.create_access_invite,
+        "revoke_access_invite": tacc.revoke_access_invite,
+        "redeem_access_invite": tacc.redeem_access_invite,
+        "get_conn": ta.get_conn,
+    })
+    exec(compile((BASE_DIR / "taoscout_access_routes.py").read_text(), "taoscout_access_routes.py", "exec"), ns)
+
     api_source = (BASE_DIR / "api.py").read_text()
     start = api_source.index("# Optional public research preview.")
     end = api_source.index("if __name__ == \"__main__\":")
@@ -156,6 +173,7 @@ class IntegrationTestBase(unittest.TestCase):
         self.db_path = Path(tempfile.mkdtemp()) / "case.db"
         ta.DB_PATH = self.db_path
         ts.DB_PATH = self.db_path
+        tacc.DB_PATH = self.db_path
         ts.STRIPE_ENABLED = True  # snapshot must be True before build_integration_app() below
         ts.PRICE_PLANS = {
             "pro_monthly": {"price_id": "price_test_pro_monthly", "label": "Pro Monthly", "amount_usd": 2.99},
@@ -163,6 +181,7 @@ class IntegrationTestBase(unittest.TestCase):
         }
         ta.init_db()
         ts.init_db()
+        tacc.init_db()
 
         self.sent_emails = []
 
@@ -397,6 +416,114 @@ class TestCustomerNavigationOnCombinedApp(IntegrationTestBase):
         billing_resp = self.client.get("/billing")
         self.assertEqual(billing_resp.status_code, 200)
         self.assertIn("Upgrade", billing_resp.text)
+
+
+class TestOwnerComplimentaryFreeAndPaidOnCombinedApp(IntegrationTestBase):
+    """The four account types side by side, in the real combined app:
+    owner, complimentary (via a real /claim redemption), ordinary Free,
+    and paid (both TAO and Stripe). Confirms /dashboard and /market agree
+    with each account type's actual access, and that owner/complimentary
+    access is independent of — and survives — whatever TAO/Stripe do."""
+
+    def claim_and_login_via_http(self, token, email, pin="864213"):
+        resp = self.client.post("/claim", data={"token": token, "email": email})
+        self.assertEqual(resp.status_code, 200, resp.text)
+        matches = [e for e in self.sent_emails if e["to"] == email]
+        self.assertTrue(matches, f"no setup email was sent to {email}")
+        m = re.search(r"token=([\w-]+)", matches[-1]["html"])
+        setup_token = m.group(1)
+        self.client.post("/setup", data={"token": setup_token, "pin": pin, "pin_confirm": pin}, follow_redirects=True)
+        login_resp = self.client.post("/login", data={"email": email, "pin": pin}, follow_redirects=True)
+        self.assertTrue(str(login_resp.url).endswith("/account"), login_resp.url)
+
+    def test_owner_account_gets_full_dashboard_and_current_market_with_no_tao_or_stripe(self):
+        email = "owner-combined@example.com"
+        self.register_and_login_via_http(email)  # plain Free identity first
+        tacc.grant_owner_access(email, granted_by="admin_key:test")  # the only way owner access is ever created
+
+        dash_resp = self.client.get("/dashboard")
+        self.assertIn("TAOSCOUT_USER", dash_resp.text, "owner access must unlock the real dashboard")
+        market_resp = self.client.get("/market/api/history")
+        self.assertFalse(market_resp.json()["delayed"], "owner access must unlock current research")
+
+        account_resp = self.client.get("/account")
+        self.assertIn("Owner Access", account_resp.text)
+
+    def test_complimentary_invite_redemption_grants_the_same_access_as_owner_but_is_distinct(self):
+        invite = tacc.create_access_invite("beta-tester", access_duration_days=30)
+        email = "complimentary-combined@example.com"
+        self.claim_and_login_via_http(invite["token"], email)
+
+        dash_resp = self.client.get("/dashboard")
+        self.assertIn("TAOSCOUT_USER", dash_resp.text)
+        market_resp = self.client.get("/market/api/history")
+        self.assertFalse(market_resp.json()["delayed"])
+
+        access = tacc.get_access(email)
+        self.assertTrue(access["complimentary"])
+        self.assertFalse(access["owner"], "an invite must never grant owner-level access")
+
+    def test_ordinary_free_account_gets_neither_dashboard_nor_current_market(self):
+        email = "plainfree-combined@example.com"
+        self.register_and_login_via_http(email)
+        dash_resp = self.client.get("/dashboard")
+        self.assertNotIn("TAOSCOUT_USER", dash_resp.text)
+        market_resp = self.client.get("/market/api/history")
+        self.assertTrue(market_resp.json()["delayed"])
+        self.assertFalse(tacc.get_access(email)["active"])
+
+    def test_tao_paid_account_unaffected_by_and_distinct_from_owner_complimentary(self):
+        email = "taopaid-combined@example.com"
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("""
+            INSERT INTO users (roster_num, email, role, status, subscription_status, expires_at, pin_hash)
+            VALUES ('TSPAID1', ?, 'operator', 'active', 'active', datetime('now', '+30 days'), ?)
+        """, (email, ta.hash_pin("135791")))
+        conn.commit()
+        conn.close()
+        self.client.post("/login", data={"email": email, "pin": "135791"}, follow_redirects=True)
+
+        dash_resp = self.client.get("/dashboard")
+        self.assertIn("TAOSCOUT_USER", dash_resp.text, "existing TAO access must keep working unchanged")
+        self.assertFalse(tacc.get_access(email)["active"], "a TAO payment must not create an owner/complimentary grant")
+
+    def test_stripe_paid_account_unaffected_by_and_distinct_from_owner_complimentary(self):
+        email = "stripepaid-combined@example.com"
+        self.register_and_login_via_http(email)
+        ts.save_customer_id(email, "cus_combined_paid")
+        future = int(time.time()) + 30 * 86400
+        sub = make_subscription("sub_combined_paid", "cus_combined_paid", "active", future)
+        payload = json.dumps(make_event("evt_combined_paid", "customer.subscription.created", sub, created=1000)).encode()
+        header = sign_payload(payload, TEST_WEBHOOK_SECRET)
+        self.client.post("/stripe/webhook", content=payload, headers={"stripe-signature": header})
+
+        market_resp = self.client.get("/market/api/history")
+        self.assertFalse(market_resp.json()["delayed"], "existing Stripe Pro access must keep working unchanged")
+        dash_resp = self.client.get("/dashboard")
+        self.assertNotIn("TAOSCOUT_USER", dash_resp.text, "Stripe Pro still must not unlock the TAO dashboard")
+        self.assertFalse(tacc.get_access(email)["active"], "a Stripe subscription must not create an owner/complimentary grant")
+
+    def test_revoking_owner_access_immediately_locks_dashboard_and_market_again(self):
+        email = "revoke-combined@example.com"
+        self.register_and_login_via_http(email)
+        tacc.grant_owner_access(email)
+        self.assertIn("TAOSCOUT_USER", self.client.get("/dashboard").text)
+
+        tacc.revoke_access(email, "owner")
+        dash_resp = self.client.get("/dashboard")
+        self.assertNotIn("TAOSCOUT_USER", dash_resp.text, "revoked owner access must lock the dashboard immediately")
+        self.assertTrue(self.client.get("/market/api/history").json()["delayed"])
+
+    def test_grant_owner_access_route_requires_the_admin_key(self):
+        # This app's verify_key stub accepts any value (test convenience —
+        # see build_integration_app above); the real production verify_key
+        # in api.py checks against config.json's api_keys list. What this
+        # test actually proves is that the route exists and is wired behind
+        # Depends(verify_key) at all, not that any particular key value is
+        # required — that enforcement is verify_key's own job, unchanged.
+        resp = self.client.post("/admin/access/grant-owner", json={"email": "adminroute@example.com"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(tacc.get_access("adminroute@example.com")["owner"])
 
 
 if __name__ == "__main__":

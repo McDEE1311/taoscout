@@ -233,19 +233,33 @@ async def invite_activate(token: str = Form(...), email: str = Form(...)):
     return HTMLResponse(_setup_html(result["setup_token"], email, result["roster_num"], result["plan"]))
 
 # ── Dashboard (gated) ─────────────────────────────────────────────────────────
+# TAO access (verify_session) is unchanged. Owner/complimentary access
+# (get_access, from taoscout_access.py — isolated from TAO/Stripe) is a
+# second, independent path to the SAME dashboard, checked only when the
+# TAO check fails — it never weakens or bypasses the TAO check itself.
 @app.get("/dashboard", response_class=HTMLResponse)
 async def app_dashboard(session: Optional[str] = Cookie(default=None)):
     if not session:
         return RedirectResponse(url="/login", status_code=302)
     user = verify_session(session)
     if not user:
-        # Check if user exists but expired
-        conn = get_conn()
-        from_session = conn.execute("SELECT email FROM sessions WHERE session_token=?", (session,)).fetchone()
-        conn.close()
-        if from_session:
-            return HTMLResponse(_expired_html(from_session["email"]))
-        return RedirectResponse(url="/login", status_code=302)
+        identity = verify_identity(session)
+        access = get_access(identity["email"]) if identity else {"active": False}
+        if identity and access["active"]:
+            user = {
+                "email": identity["email"],
+                "role": "owner" if access["owner"] else "complimentary",
+                "roster_num": identity["roster_num"],
+                "plan_name": "Owner" if access["owner"] else "Complimentary",
+                "expires_at": access["expires_at"] or "",
+            }
+        else:
+            conn = get_conn()
+            from_session = conn.execute("SELECT email FROM sessions WHERE session_token=?", (session,)).fetchone()
+            conn.close()
+            if from_session:
+                return HTMLResponse(_expired_html(from_session["email"]))
+            return RedirectResponse(url="/login", status_code=302)
     dashboard_file = SCRIPT_DIR / "dashboard.html"
     if not dashboard_file.exists():
         return HTMLResponse("<h2>Dashboard not found.</h2>", status_code=404)
@@ -310,6 +324,18 @@ async def account_page(session: Optional[str] = Cookie(default=None)):
 <p><a href="/">View TAO plans →</a></p>
 </div>"""
 
+    access = get_access(email)
+    access_section = ""
+    if access["active"]:
+        label = "Owner" if access["owner"] else "Complimentary"
+        expiry_note = f"Expires: {access['expires_at'][:10]}" if access["expires_at"] else "No expiration."
+        access_section = f"""<div class="card" style="border-color:#1a4a1a">
+<h3 style="margin-bottom:1rem;font-size:15px;color:#00ff88">{label} Access</h3>
+<p style="color:#888">Full dashboard and current-research access, independent of TAO or Stripe.</p>
+<p style="color:#555;font-size:12px">{expiry_note}</p>
+{'<p style="margin-top:1rem"><a href="/dashboard">Go to Dashboard →</a></p>' if not tao_active else ''}
+</div>"""
+
     return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>TaoScout Account</title>
 <style>*{{box-sizing:border-box}}body{{background:#0a0a0a;color:#e0e0e0;font-family:'Courier New',monospace;padding:2rem;max-width:600px;margin:0 auto}}
@@ -324,6 +350,7 @@ a{{color:#00d4ff;text-decoration:none}}</style>
 <div class="row"><span class="lbl">Email</span><span>{email}</span></div>
 {f'<div class="row"><span class="lbl">Roster</span><span style="color:#00d4ff">{row["roster_num"]}</span></div>' if row else ''}
 </div>
+{access_section}
 {tao_section}
 <div class="card">
 <h3 style="margin-bottom:1rem;font-size:15px;color:#00d4ff">Pro / Billing</h3>

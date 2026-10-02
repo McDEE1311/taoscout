@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Standalone server for the REAL, browser-based Stripe test-mode verification
-on the combined branch (TAO + Stripe + the real /market mount, with
-resolve_pro wired to actual Stripe entitlement) — registration, PIN setup,
-login, checkout, signed webhook, current-research unlock, billing portal,
-and cancellation (both immediate and scheduled-at-period-end).
+Standalone server for the REAL, browser-based verification of the combined
+branch (TAO + Stripe + the real /market mount + owner/complimentary access)
+— registration, PIN setup, login, owner/complimentary access, checkout,
+signed webhook, current-research unlock, billing portal, and cancellation
+(both immediate and scheduled-at-period-end).
 
 Why this exists instead of running the real api.py: api.py imports
 daily_dashboard, scout, bittensor, and other chain-scanning modules that are
-unrelated to auth/billing/market and require a working rig config/data
-directory to be meaningful. This script mounts exactly the three pieces
-that matter here — taoscout_routes.py (registration/setup/login),
-taoscout_stripe_routes.py (billing/webhook), and the real market app via
+unrelated to auth/billing/market/access and require a working rig
+config/data directory to be meaningful. This script mounts exactly the four
+pieces that matter here — taoscout_routes.py (registration/setup/login),
+taoscout_stripe_routes.py (billing/webhook), taoscout_access_routes.py
+(owner/complimentary grants + /claim), and the real market app via
 market.web.create_app(resolve_pro=...) — the same way api.py wires them,
 extracted verbatim from api.py's own "Optional public research preview"
 block so the /market wiring under test is guaranteed to be the real code,
@@ -62,6 +63,7 @@ Open https://localhost:8787/register in a browser to begin (see the
 connection runbook for reaching this from a different machine over SSH).
 """
 import argparse
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -73,12 +75,16 @@ sys.path.insert(0, str(BASE_DIR))
 
 import taoscout_auth as ta  # noqa: E402
 import taoscout_stripe as ts  # noqa: E402
+import taoscout_access as tacc  # noqa: E402
 
-from fastapi import FastAPI, HTTPException, Depends  # noqa: E402
+from fastapi import FastAPI, HTTPException, Depends, Request  # noqa: E402
 
 TEST_TAO_EMAIL = "tao-verify@example.com"
 TEST_TAO_PIN = "246810"
 TEST_TAO_ROSTER = "TSVERIFY1"
+
+TEST_OWNER_EMAIL = "owner-verify@example.com"
+TEST_OWNER_PIN = "135791"
 
 
 def _default_db_path():
@@ -124,7 +130,6 @@ def _seed_test_research(ledger_path):
 
 
 def _seed_tao_test_user(db_path):
-    import sqlite3
     conn = sqlite3.connect(str(db_path))
     existing = conn.execute("SELECT 1 FROM users WHERE email=?", (TEST_TAO_EMAIL,)).fetchone()
     if not existing:
@@ -137,6 +142,46 @@ def _seed_tao_test_user(db_path):
     conn.close()
     print(f"TAO-active test account ready: email={TEST_TAO_EMAIL} pin={TEST_TAO_PIN} "
           f"— log in as this user separately to confirm existing TAO/dashboard access is untouched.")
+
+
+def _seed_owner_test_account(db_path):
+    """A pre-registered Free account (identity only) with a real
+    grant_owner_access() call layered on top — exactly the two-step
+    process a real owner grant goes through: identity via the normal
+    account system, access via the isolated access_grants table. Printed
+    here, not granted through any public route."""
+    conn = sqlite3.connect(str(db_path))
+    existing = conn.execute("SELECT 1 FROM users WHERE email=?", (TEST_OWNER_EMAIL,)).fetchone()
+    if not existing:
+        conn.execute("""
+            INSERT INTO users (roster_num, email, role, status, subscription_status, pin_hash)
+            VALUES ('TSOWNER1', ?, 'free', 'active', 'inactive', ?)
+        """, (TEST_OWNER_EMAIL, ta.hash_pin(TEST_OWNER_PIN)))
+        conn.commit()
+    conn.close()
+    if not tacc.get_access(TEST_OWNER_EMAIL)["owner"]:
+        tacc.grant_owner_access(TEST_OWNER_EMAIL, granted_by="run_billing_verification_server.py seed")
+    print(f"Owner-access test account ready: email={TEST_OWNER_EMAIL} pin={TEST_OWNER_PIN} "
+          f"— has full dashboard + current-research access with NO TAO row and NO Stripe subscription.")
+
+
+def _seed_complimentary_invite(db_path):
+    """A ready-to-redeem single-use complimentary invite, printed so it
+    can be tested immediately without needing the admin API."""
+    conn = sqlite3.connect(str(db_path))
+    existing = conn.execute(
+        "SELECT token FROM access_invites WHERE label='verification-seed'"
+    ).fetchone()
+    conn.close()
+    if existing:
+        token = existing[0]
+    else:
+        invite = tacc.create_access_invite("verification-seed", max_uses=1,
+                                             invite_expires_hours=24 * 7, access_duration_days=30)
+        token = invite["token"]
+    print(f"Complimentary-access invite ready (single-use, 30-day grant, expires in 7 days): "
+          f"/claim?token={token}")
+    return token
 
 
 def build_app(ledger_path):
@@ -154,9 +199,13 @@ def build_app(ledger_path):
     else:
         print("SMTP not configured: setup links will only appear in this log (see '[EMAIL SKIP]' lines).")
 
-    app = FastAPI(title="TaoScout billing + market verification (combined PR #2 + #3 branch)")
+    app = FastAPI(title="TaoScout billing + market + access verification (combined PR #2 + #3 branch)")
 
-    def verify_key(*args, **kwargs):
+    def verify_key(request: Request):
+        # Matches the real verify_key's signature (Request -> X-API-Key
+        # header) so FastAPI's dependency injection resolves it correctly.
+        # Unlike production, this verification server always accepts —
+        # it never leaves this machine and holds no real customer data.
         return "verification-key"
 
     ns = {
@@ -191,6 +240,17 @@ def build_app(ledger_path):
     })
     exec(compile((BASE_DIR / "taoscout_stripe_routes.py").read_text(), "taoscout_stripe_routes.py", "exec"), ns)
 
+    ns.update({
+        "grant_owner_access": tacc.grant_owner_access,
+        "revoke_access": tacc.revoke_access,
+        "get_access": tacc.get_access,
+        "has_full_access": tacc.has_full_access,
+        "create_access_invite": tacc.create_access_invite,
+        "revoke_access_invite": tacc.revoke_access_invite,
+        "redeem_access_invite": tacc.redeem_access_invite,
+    })
+    exec(compile((BASE_DIR / "taoscout_access_routes.py").read_text(), "taoscout_access_routes.py", "exec"), ns)
+
     # Extracted verbatim from api.py's own "Optional public research
     # preview" block (same anchors tests/test_integration_free_pro.py
     # uses), so the /market wiring under test is the real production code.
@@ -217,16 +277,21 @@ def main():
 
     if ts.DB_PATH == BASE_DIR / "data" / "taoscout_users.db":
         throwaway = _default_db_path()
-        print(f"No TAOSCOUT_STRIPE_DB/TAOSCOUT_USERS_DB set — using a throwaway database: {throwaway}")
+        print(f"No TAOSCOUT_STRIPE_DB/TAOSCOUT_USERS_DB/TAOSCOUT_ACCESS_DB set — using a throwaway database: {throwaway}")
         ta.DB_PATH = throwaway
         ts.DB_PATH = throwaway
+        tacc.DB_PATH = throwaway
         ta.init_db()
         ts.init_db()
+        tacc.init_db()
 
     ledger_path = Path(ta.ENV.get("TAOSCOUT_MARKET_LEDGER") or _default_ledger_path())
     if not ledger_path.exists():
         _seed_test_research(ledger_path)
     _seed_tao_test_user(ta.DB_PATH)
+    _seed_owner_test_account(ta.DB_PATH)
+    _seed_complimentary_invite(ta.DB_PATH)
+    print(f"Plain Free account: just use /register with any email — no grant, no TAO, no Stripe.")
 
     app = build_app(ledger_path)
 
