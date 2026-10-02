@@ -10,7 +10,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 BASE_DIR  = Path(__file__).parent
-DB_PATH   = BASE_DIR / "data" / "taoscout_users.db"
 ENV_FILE  = BASE_DIR / ".env"
 
 def load_env():
@@ -25,6 +24,11 @@ def load_env():
     return env
 
 ENV = load_env()
+
+# TAOSCOUT_USERS_DB lets tests/tooling point this module at a database copy
+# without ever touching the live file — init_db() below runs unconditionally
+# at import time.
+DB_PATH = Path(ENV.get("TAOSCOUT_USERS_DB", str(BASE_DIR / "data" / "taoscout_users.db")))
 
 PAYMENT_ADDRESS = ENV.get("TAOSCOUT_PAYMENT_ADDRESS", "5GWF2n8PGg1hgcM7KEvJohHmEgtK8Mr1Qarm4MedXfGtwcTb")
 BASE_URL        = ENV.get("BASE_URL", "https://app.taoscout.com")
@@ -94,7 +98,9 @@ def init_db():
             renewed_at TEXT,
             setup_token TEXT,
             token_expires TEXT,
-            token_used INTEGER DEFAULT 0
+            token_used INTEGER DEFAULT 0,
+            reminder_7d_sent INTEGER DEFAULT 0,
+            reminder_1d_sent INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS orders (
@@ -143,6 +149,17 @@ def init_db():
             subject TEXT,
             sent_at TEXT DEFAULT (datetime('now')),
             status TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS user_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT,
+            event TEXT NOT NULL,
+            path TEXT,
+            metadata TEXT,
+            ip TEXT,
+            user_agent TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
         );
     """)
     conn.commit()
@@ -567,6 +584,25 @@ def verify_session(token: str):
     conn.close()
     return dict(row) if row else None
 
+def verify_identity(token: str):
+    """Session identity only — does NOT require an active/unexpired TAO
+    subscription. For product surfaces whose access is governed by their
+    own entitlement rules (e.g. Stripe-funded Pro), not TAO's, so a
+    Stripe-only customer or a customer with expired TAO access can still
+    be identified and log in. verify_session() above is unchanged and
+    still gates the existing TAO-funded endpoints (dashboard, account,
+    etc.) on TAO subscription validity."""
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT s.email, u.roster_num
+        FROM sessions s
+        JOIN users u ON s.email = u.email
+        WHERE s.session_token=?
+        AND datetime(s.expires_at) > datetime('now')
+    """, (token,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def delete_session(token: str):
     conn = get_conn()
     conn.execute("DELETE FROM sessions WHERE session_token=?", (token,))
@@ -715,6 +751,84 @@ def create_trial_user(email: str, trial_days: int = 3, source: str = "landing_tr
         "roster_num": roster_num,
         "plan": user["plan_name"],
     }
+
+
+def send_account_setup_email(email: str, token: str, roster_num: str):
+    """Setup email for a direct Free/Stripe account registration — no TAO
+    trial-length or plan copy, unlike send_trial_setup_email above."""
+    setup_url = f"{BASE_URL}/setup?token={token}"
+    subject = "TaoScout — Create Your Access PIN"
+    html = f"""
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+<h2 style="color:#0a0a0a">Welcome to TaoScout</h2>
+<p>Create your PIN to finish setting up your account.</p>
+<p style="margin:24px 0">
+  <a href="{setup_url}" style="background:#00d4ff;color:#000;padding:12px 24px;
+     text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">
+     Create Your PIN →
+  </a>
+</p>
+<p style="color:#555;font-size:13px">Or paste this link: {setup_url}</p>
+<p style="color:#aaa;font-size:11px;margin-top:30px">Roster number: {roster_num}</p>
+</div>
+"""
+    text = f"Welcome to TaoScout.\n\nCreate your PIN here: {setup_url}\n\nRoster number: {roster_num}"
+    return send_email(email, subject, html, text)
+
+
+def register_account(email: str) -> dict:
+    """Create a Free-tier account (no TAO payment involved) and send a setup
+    link, or resend one if the account exists but has no PIN yet. Unlike
+    create_trial_user(), this sets no expires_at and leaves role='free'/
+    subscription_status='inactive' — it grants login/identity only.
+    verify_session() (TAO-gated endpoints) still requires an active,
+    unexpired TAO subscription regardless of this account's existence;
+    verify_identity() (Stripe/billing) only needs a valid session, which
+    this account can obtain once its PIN is set via the existing /setup
+    flow — no TAO-specific gate involved at any step here."""
+    email = email.lower().strip()
+    conn = get_conn()
+    user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    setup_token   = secrets.token_urlsafe(32)
+    token_expires = (datetime.now(timezone.utc) + timedelta(hours=72)).isoformat()
+
+    if not user:
+        roster_num = generate_roster_num()
+        conn.execute("""
+            INSERT INTO users (roster_num, email, role, plan_id, plan_name, status,
+                subscription_status, source, setup_token, token_expires)
+            VALUES (?, ?, 'free', 'free_account', 'Free', 'pending_setup',
+                'inactive', 'free_signup', ?, ?)
+        """, (roster_num, email, setup_token, token_expires))
+        conn.commit()
+        conn.close()
+        send_account_setup_email(email, setup_token, roster_num)
+        return {"status": "account_created", "email": email, "roster_num": roster_num}
+
+    roster_num = user["roster_num"]
+    pin_hash = user["pin_hash"] if "pin_hash" in user.keys() else None
+    if not pin_hash:
+        conn.execute("""
+            UPDATE users SET setup_token=?, token_expires=?, token_used=0
+            WHERE email=?
+        """, (setup_token, token_expires, email))
+        conn.commit()
+        conn.close()
+        send_account_setup_email(email, setup_token, roster_num)
+        return {"status": "setup_link_resent", "email": email, "roster_num": roster_num}
+
+    conn.close()
+    subject = "TaoScout — You Already Have Access"
+    html = f"""<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1a1a1a">
+<h2>You already have a TaoScout account</h2>
+<p>Roster number: <strong>{roster_num}</strong></p>
+<p style="margin:24px 0">
+  <a href="{BASE_URL}/login" style="background:#00d4ff;color:#000;padding:12px 24px;
+     text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block">Log In →</a>
+</p></div>"""
+    text = f"You already have a TaoScout account.\n\nRoster: {roster_num}\n\nLog in: {BASE_URL}/login"
+    send_email(email, subject, html, text)
+    return {"status": "already_active", "email": email, "roster_num": roster_num}
 
 
 

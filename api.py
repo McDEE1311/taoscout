@@ -543,7 +543,7 @@ async def alpha_signals_endpoint(min_relevance: int = 40, key: str = Depends(ver
 try:
     from taoscout_auth import (
         PLANS, create_order, confirm_order, verify_pin, hash_pin,
-        create_session, verify_session, delete_session,
+        create_session, verify_session, verify_identity, delete_session, register_account,
         start_payment_watcher, start_expiration_checker,
         check_pending_payments, get_conn, ENV, PAYMENT_ADDRESS,
         create_invite, use_invite, get_order_status
@@ -555,14 +555,70 @@ except Exception as e:
     print(f"WARNING: TaoScout auth/payment routes failed to load: {e}")
     traceback.print_exc()
 
+# ── Owner / Complimentary Access ──────────────────────────────────────────────
+# Extends the existing admin (verify_key) and invite mechanisms above rather
+# than creating a new account system. Isolated from both TAO
+# (users.subscription_status/expires_at) and Stripe (stripe_entitlements):
+# owner/complimentary grants live in their own tables and cannot be touched
+# by either system's expiration/cancellation logic.
+try:
+    from taoscout_access import (
+        grant_owner_access, revoke_access, get_access, has_full_access,
+        create_access_invite, revoke_access_invite, redeem_access_invite,
+    )
+    exec(open(str(SCRIPT_DIR / "taoscout_access_routes.py")).read())
+    print("TaoScout owner/complimentary access routes loaded")
+except Exception as e:
+    import traceback
+    print(f"WARNING: TaoScout owner/complimentary access routes failed to load: {e}")
+    traceback.print_exc()
+
 # Optional public research preview. Disabled unless explicitly configured.
-# Customer auth/Stripe are intentionally not inferred from operator API keys.
+# Free/Pro gating is wired to the real Stripe entitlement (identity via
+# verify_identity, entitlement via has_pro — NOT the TAO-gated
+# verify_session): a Free caller with no session, an expired session, or no
+# active Stripe subscription all resolve to is_pro=False, never raising.
+def _market_resolve_pro(request):
+    try:
+        session_token = request.cookies.get("session")
+        if not session_token:
+            return False
+        user = verify_identity(session_token)
+        if not user:
+            return False
+        return has_pro(user["email"]) or has_full_access(user["email"])
+    except Exception:
+        return False
+
 if CFG.get("market_research_enabled", False):
     from market.web import create_app as create_market_app
     app.mount("/market", create_market_app(
         ledger=CFG.get("market_ledger_path", str(SCRIPT_DIR / "data" / "market-research.db")),
         report=CFG.get("market_report_path"),
+        resolve_pro=_market_resolve_pro,
     ))
+
+# ── TaoScout Stripe Billing Routes (Free/Pro) ─────────────────────────────────
+# Isolated from the TAO payment system above: separate tables, separate
+# expiration worker. Disabled automatically until STRIPE_SECRET_KEY and
+# STRIPE_WEBHOOK_SECRET are configured — and, while disabled, this block
+# causes no database or background-worker side effects at all.
+try:
+    from taoscout_auth import verify_identity
+    from taoscout_stripe import (
+        STRIPE_ENABLED, get_entitlement, has_pro,
+        create_checkout_session, create_billing_portal_session,
+        verify_webhook, process_webhook_event,
+        start_stripe_reconciler,
+    )
+    exec(open(str(SCRIPT_DIR / "taoscout_stripe_routes.py")).read())
+    if STRIPE_ENABLED:
+        start_stripe_reconciler(interval_seconds=3600)
+    print(f"TaoScout Stripe billing routes loaded (enabled={STRIPE_ENABLED})")
+except Exception as e:
+    import traceback
+    print(f"WARNING: TaoScout Stripe billing routes failed to load: {e}")
+    traceback.print_exc()
 
 if __name__ == "__main__":
     import uvicorn
