@@ -73,6 +73,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 TEST_WEBHOOK_SECRET = "whsec_integration_test_secret"
+TEST_ADMIN_KEY = "test-admin-key-for-automated-tests-only"
 
 
 def sign_payload(payload_bytes: bytes, secret: str, timestamp: int = None) -> str:
@@ -104,10 +105,14 @@ def build_integration_app(ledger_path):
     app = FastAPI()
 
     def verify_key(request: Request):
-        # Matches the real verify_key's signature (api.py takes a Request
-        # and reads X-API-Key) so FastAPI's dependency injection resolves
-        # it correctly; unlike production, this test stub always accepts.
-        return "test-key"
+        # Matches the real verify_key's BEHAVIOR, not just its signature:
+        # requires a specific key, rejects missing/wrong ones with 401 —
+        # same as api.py's own verify_key checking against config.json's
+        # api_keys list. A stub that accepted everything would make the
+        # "missing/wrong keys can't grant owner access" tests meaningless.
+        if request.headers.get("X-API-Key", "") != TEST_ADMIN_KEY:
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        return TEST_ADMIN_KEY
 
     ns = {
         "app": app, "HTTPException": HTTPException, "Depends": Depends,
@@ -151,7 +156,12 @@ def build_integration_app(ledger_path):
 
     api_source = (BASE_DIR / "api.py").read_text()
     start = api_source.index("# Optional public research preview.")
-    end = api_source.index("if __name__ == \"__main__\":")
+    # Stop at the Stripe Billing block's own comment, NOT at
+    # if __name__: the Stripe block now sits AFTER the market-mount
+    # block in api.py (both before if __name__), and this harness
+    # already exec's taoscout_stripe_routes.py separately above — ending
+    # at if __name__ would re-exec that same block a second time.
+    end = api_source.index("# ── TaoScout Stripe Billing Routes")
     market_wiring_source = api_source[start:end]
     ns["CFG"] = {
         "market_research_enabled": True,
@@ -515,15 +525,53 @@ class TestOwnerComplimentaryFreeAndPaidOnCombinedApp(IntegrationTestBase):
         self.assertTrue(self.client.get("/market/api/history").json()["delayed"])
 
     def test_grant_owner_access_route_requires_the_admin_key(self):
-        # This app's verify_key stub accepts any value (test convenience —
-        # see build_integration_app above); the real production verify_key
-        # in api.py checks against config.json's api_keys list. What this
-        # test actually proves is that the route exists and is wired behind
-        # Depends(verify_key) at all, not that any particular key value is
-        # required — that enforcement is verify_key's own job, unchanged.
-        resp = self.client.post("/admin/access/grant-owner", json={"email": "adminroute@example.com"})
-        self.assertEqual(resp.status_code, 200)
+        resp = self.client.post("/admin/access/grant-owner", json={"email": "adminroute@example.com"},
+                                 headers={"X-API-Key": TEST_ADMIN_KEY})
+        self.assertEqual(resp.status_code, 200, resp.text)
         self.assertTrue(tacc.get_access("adminroute@example.com")["owner"])
+
+    def test_admin_access_routes_reject_missing_wrong_and_session_only_auth(self):
+        """The admin API-key gate, not a session cookie, is what protects
+        owner/invite creation — missing key, wrong key, and a logged-in
+        ordinary user's own session must all be rejected the same way."""
+        admin_calls = [
+            ("POST", "/admin/access/grant-owner", {"email": "attacker@example.com"}),
+            ("POST", "/admin/access/invite/create", {"label": "attacker-invite"}),
+            ("POST", "/admin/access/invite/revoke", {"token": "whatever"}),
+            ("POST", "/admin/access/revoke", {"email": "attacker@example.com"}),
+            ("GET", "/admin/access/grants", None),
+            ("GET", "/admin/access/invites", None),
+        ]
+
+        def call(method, path, body, headers=None):
+            if method == "GET":
+                return self.client.get(path, headers=headers or {})
+            return self.client.post(path, json=body, headers=headers or {})
+
+        # No X-API-Key header at all.
+        for method, path, body in admin_calls:
+            resp = call(method, path, body)
+            self.assertEqual(resp.status_code, 401, f"{method} {path} with no key should be 401")
+
+        # Wrong X-API-Key.
+        for method, path, body in admin_calls:
+            resp = call(method, path, body, {"X-API-Key": "definitely-not-the-admin-key"})
+            self.assertEqual(resp.status_code, 401, f"{method} {path} with a wrong key should be 401")
+
+        # A real, logged-in ordinary user's own session cookie — session
+        # auth is for identity, never a substitute for the admin API key.
+        self.register_and_login_via_http("ordinaryuser@example.com")
+        for method, path, body in admin_calls:
+            resp = call(method, path, body)  # self.client now carries a valid session cookie
+            self.assertEqual(resp.status_code, 401,
+                              f"{method} {path}: a valid user session must not satisfy the admin key gate")
+
+        # Confirm none of the above actually granted or created anything.
+        self.assertFalse(tacc.get_access("attacker@example.com")["active"])
+        conn = sqlite3.connect(str(self.db_path))
+        count = conn.execute("SELECT COUNT(*) FROM access_invites WHERE label='attacker-invite'").fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 0)
 
 
 if __name__ == "__main__":
